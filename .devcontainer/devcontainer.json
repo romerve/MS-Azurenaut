@@ -1,0 +1,61 @@
+{
+  "name": "C# (.NET 8) - Azure Functions + Durable Functions",
+  // Good base for .NET 8 dev + Azure CLI + common tooling
+  "image": "mcr.microsoft.com/devcontainers/dotnet:1-8.0",
+  "features": {
+    // Azure CLI (az) inside the container
+    "ghcr.io/devcontainers/features/azure-cli:1": {},
+    // Node is required for Azure Functions Core Tools (v4)
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "lts"
+    },
+    // Optional: useful for local/test storage emulation; Functions often use Storage
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-dotnettools.csharp",
+        "ms-dotnettools.csdevkit",
+        "ms-azuretools.vscode-azurefunctions",
+        "ms-azuretools.vscode-azureresourcegroups",
+        "Azurite.azurite",
+        "ms-vscode.powershell",
+        "GitHub.copilot"
+      ],
+      "settings": {
+        "dotnet.defaultSolution": "",
+        "omnisharp.useModernNet": true,
+        "azureFunctions.projectRuntime": "~4",
+        "azureFunctions.deploySubpath": ".",
+        "azureFunctions.scmDoBuildDuringDeployment": true
+      }
+    }
+  },
+
+  // Common ports:
+  // - 7071: Azure Functions host (local)
+  // - 10000/10001/10002: Azurite blob/queue/table
+  "forwardPorts": [7071, 10000, 10001, 10002],
+  "portsAttributes": {
+    "7071": { "label": "Azure Functions Host", "onAutoForward": "notify" },
+    "10000": { "label": "Azurite Blob", "onAutoForward": "silent" },
+    "10001": { "label": "Azurite Queue", "onAutoForward": "silent" },
+    "10002": { "label": "Azurite Table", "onAutoForward": "silent" }
+  },
+
+  // Helps keep the container alive and friendly for inner-loop dev
+  "remoteUser": "vscode",
+
+  // Install Azure Functions Core Tools v4 (requires Node) + a couple useful .NET global tools
+  // Note: this does NOT create any files in your repo; it only installs tools in the container.
+  "postCreateCommand": "bash -lc 'set -e; if ! command -v func >/dev/null 2>&1; then npm i -g azure-functions-core-tools@4 --unsafe-perm true; fi; dotnet --info; dotnet tool update -g dotnet-ef || dotnet tool install -g dotnet-ef; dotnet tool update -g dotnet-outdated-tool || dotnet tool install -g dotnet-outdated-tool; echo \"Ready: $(dotnet --version), func $(func --version 2>/dev/null || true)\"'",
+
+  // Optional: enable running docker-based dependencies (Azurite in Docker, etc.)
+  "runArgs": ["--init"],
+
+  // Optional quality-of-life mounts
+  "mounts": [
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.azure,target=/home/vscode/.azure,type=bind,consistency=cached"
+  ]
+}
