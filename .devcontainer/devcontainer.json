@@ -1,5 +1,5 @@
 {
-  "name": "C# (.NET 8) - Azure Functions + Durable Functions (Codespaces)",
+  "name": "C# (.NET 8) - Azure Functions + Durable (Codespaces-safe)",
   "image": "mcr.microsoft.com/devcontainers/dotnet:1-8.0",
 
   "features": {
@@ -8,6 +8,8 @@
       "version": "lts"
     }
   },
+
+  "remoteUser": "vscode",
 
   "customizations": {
     "vscode": {
@@ -34,7 +36,5 @@
     "10002": { "label": "Azurite Table", "onAutoForward": "silent" }
   },
 
-  "remoteUser": "vscode",
-
-  "postCreateCommand": "bash -lc 'set -e; node -v; npm -v; if ! command -v func >/dev/null 2>&1; then npm install -g azure-functions-core-tools@4 --unsafe-perm true; fi; dotnet --info; func --version'"
+  "postCreateCommand": "bash -lc 'set -euo pipefail; echo \"node=$(node -v) npm=$(npm -v)\"; if ! command -v func >/dev/null 2>&1; then echo \"Installing Azure Functions Core Tools v4...\"; for i in 1 2 3; do npm install -g azure-functions-core-tools@4 --unsafe-perm true && break || { echo \"retry $i\"; sleep 2; }; done; fi; echo \"dotnet=$(dotnet --version)\"; func --version; az version >/dev/null'"
 }
