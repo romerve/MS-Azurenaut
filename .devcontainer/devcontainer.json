@@ -1,5 +1,5 @@
 {
-  "name": "C# (.NET 8) - Azure Functions + Durable (Codespaces-safe)",
+  "name": "C# (.NET 8) - Azure Functions (Codespaces-safe)",
   "image": "mcr.microsoft.com/devcontainers/dotnet:1-8.0",
 
   "features": {
@@ -17,9 +17,7 @@
         "ms-dotnettools.csharp",
         "ms-dotnettools.csdevkit",
         "ms-azuretools.vscode-azurefunctions",
-        "ms-azuretools.vscode-azureresourcegroups",
-        "Azurite.azurite",
-        "ms-vscode.powershell"
+        "Azurite.azurite"
       ],
       "settings": {
         "omnisharp.useModernNet": true,
@@ -30,11 +28,10 @@
 
   "forwardPorts": [7071, 10000, 10001, 10002],
   "portsAttributes": {
-    "7071": { "label": "Azure Functions Host", "onAutoForward": "notify" },
-    "10000": { "label": "Azurite Blob", "onAutoForward": "silent" },
-    "10001": { "label": "Azurite Queue", "onAutoForward": "silent" },
-    "10002": { "label": "Azurite Table", "onAutoForward": "silent" }
+    "7071": { "label": "Azure Functions Host", "onAutoForward": "notify" }
   },
 
-  "postCreateCommand": "bash -lc 'set -euo pipefail; echo \"node=$(node -v) npm=$(npm -v)\"; if ! command -v func >/dev/null 2>&1; then echo \"Installing Azure Functions Core Tools v4...\"; for i in 1 2 3; do npm install -g azure-functions-core-tools@4 --unsafe-perm true && break || { echo \"retry $i\"; sleep 2; }; done; fi; echo \"dotnet=$(dotnet --version)\"; func --version; az version >/dev/null'"
+  // IMPORTANT: keep postCreate very small to avoid recovery-mode triggers.
+  // You can run 'npm i -g azure-functions-core-tools@4' manually in the terminal after the Codespace boots.
+  "postCreateCommand": "bash -lc 'set -e; dotnet --version; node -v; npm -v; echo \"Container ready\"'"
 }
