@@ -1,0 +1,150 @@
+name: copilot-azure-modernization
+
+x-service-healthcheck: &service-healthcheck
+  interval: 5s
+  timeout: 3s
+  retries: 20
+  start_period: 10s
+
+services:
+  legacy:
+    build:
+      context: .
+      dockerfile: src/Legacy.Ordering.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Database__Provider: Sqlite
+      ConnectionStrings__Orders: Data Source=/app/data/legacy-orders.db
+    ports:
+      - "5001:8080"
+    volumes:
+      - legacy-data:/app/data
+
+  inventory:
+    build:
+      context: .
+      dockerfile: src/Inventory.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Database__Provider: Sqlite
+      ConnectionStrings__Inventory: Data Source=/app/data/inventory.db
+    volumes:
+      - inventory-data:/app/data
+    expose:
+      - "8080"
+    healthcheck:
+      <<: *service-healthcheck
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/health/ready"]
+
+  orders:
+    build:
+      context: .
+      dockerfile: src/Orders.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Database__Provider: Sqlite
+      ConnectionStrings__Orders: Data Source=/app/data/orders.db
+      Services__Inventory: http://inventory:8080
+    volumes:
+      - orders-data:/app/data
+    expose:
+      - "8080"
+    depends_on:
+      inventory:
+        condition: service_healthy
+    healthcheck:
+      <<: *service-healthcheck
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/health/ready"]
+
+  fulfillment:
+    build:
+      context: .
+      dockerfile: src/Fulfillment.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Database__Provider: Sqlite
+      ConnectionStrings__Fulfillment: Data Source=/app/data/fulfillment.db
+      Services__Orders: http://orders:8080
+      Services__Inventory: http://inventory:8080
+    volumes:
+      - fulfillment-data:/app/data
+    expose:
+      - "8080"
+    depends_on:
+      inventory:
+        condition: service_healthy
+      orders:
+        condition: service_healthy
+    healthcheck:
+      <<: *service-healthcheck
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/health/ready"]
+
+  edge:
+    build:
+      context: .
+      dockerfile: src/Edge.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Services__Orders: http://orders:8080
+      Services__Inventory: http://inventory:8080
+      Services__Fulfillment: http://fulfillment:8080
+    ports:
+      - "5002:8080"
+    depends_on:
+      orders:
+        condition: service_healthy
+      inventory:
+        condition: service_healthy
+      fulfillment:
+        condition: service_healthy
+    healthcheck:
+      <<: *service-healthcheck
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/health/ready"]
+
+  sql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    profiles: ["sql"]
+    platform: ${SQL_PLATFORM:-linux/amd64}
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${SQL_PASSWORD:-LocalOnly-ChangeMe-9f3!}
+    ports:
+      - "14333:1433"
+    volumes:
+      - sql-data:/var/opt/mssql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa
+          -P "$$MSSQL_SA_PASSWORD" -C -Q "SELECT 1" || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  legacy-sql:
+    build:
+      context: .
+      dockerfile: src/Legacy.Ordering.Api/Dockerfile
+    profiles: ["sql"]
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Database__Provider: SqlServer
+      ConnectionStrings__Orders: >-
+        Server=sql,1433;Initial Catalog=legacy-orders;User ID=sa;
+        Password=${SQL_PASSWORD:-LocalOnly-ChangeMe-9f3!};
+        Encrypt=True;TrustServerCertificate=True
+    ports:
+      - "5011:8080"
+    depends_on:
+      sql:
+        condition: service_healthy
+
+volumes:
+  legacy-data:
+  inventory-data:
+  orders-data:
+  fulfillment-data:
+  sql-data:

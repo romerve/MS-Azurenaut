@@ -1,0 +1,34 @@
+flowchart LR
+  Client[Retail client] -->|external HTTPS| Edge[Edge API]
+  Edge -->|typed HTTP| Orders[Orders API]
+  Edge -->|typed HTTP| Inventory[Inventory API]
+  Edge -->|typed HTTP| Fulfillment[Fulfillment API]
+  Orders -->|availability HTTP| Inventory
+  Fulfillment -->|order HTTP| Orders
+  Fulfillment -->|idempotent reservation HTTP| Inventory
+
+  Orders --> OrdersDb[(Orders database)]
+  Inventory --> InventoryDb[(Inventory database)]
+  Fulfillment --> FulfillmentDb[(Fulfillment database)]
+
+  Edge -. internal service FQDNs .-> Environment[Azure Container Apps environment]
+  Orders -. internal ingress .-> Environment
+  Inventory -. internal ingress .-> Environment
+  Fulfillment -. internal ingress .-> Environment
+
+  Edge --> Telemetry[OpenTelemetry / Application Insights]
+  Orders --> Telemetry
+  Inventory --> Telemetry
+  Fulfillment --> Telemetry
+
+  EdgeIdentity[Edge identity] --> ACR[Azure Container Registry]
+  OrdersIdentity[Orders identity] --> OrdersDb
+  InventoryIdentity[Inventory identity] --> InventoryDb
+  FulfillmentIdentity[Fulfillment identity] --> FulfillmentDb
+
+  classDef external fill:#d1e7dd,stroke:#0f5132,color:#212529
+  classDef internal fill:#cff4fc,stroke:#055160,color:#212529
+  classDef data fill:#e2e3e5,stroke:#41464b,color:#212529
+  class Edge external
+  class Orders,Inventory,Fulfillment internal
+  class OrdersDb,InventoryDb,FulfillmentDb data

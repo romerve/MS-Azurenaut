@@ -1,0 +1,13 @@
+flowchart LR
+  Client[Retail client] -->|HTTP /api| Legacy[.NET 6 Legacy Ordering API]
+  Legacy --> Coupled[LegacyOrderService]
+  Coupled --> Orders[Orders logic]
+  Coupled --> Inventory[Inventory logic]
+  Coupled --> Fulfillment[Fulfillment logic]
+  Orders --> SharedDb[(Shared legacy database)]
+  Inventory --> SharedDb
+  Fulfillment --> SharedDb
+  Legacy -. credential-shaped setting .-> Config[appsettings.json]
+
+  classDef constraint fill:#fff3cd,stroke:#856404,color:#212529
+  class Legacy,Coupled,SharedDb,Config constraint
