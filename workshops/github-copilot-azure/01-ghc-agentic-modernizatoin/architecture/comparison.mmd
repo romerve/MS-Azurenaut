@@ -1,0 +1,33 @@
+flowchart TB
+  subgraph Before[Observed baseline]
+    LegacyClient[Client] --> LegacyApi[.NET 6 API]
+    LegacyApi --> LegacyService[Coupled Orders + Inventory + Fulfillment]
+    LegacyService --> LegacyDb[(Shared database)]
+  end
+
+  Assess[Assess evidence] --> Plan[Plan reversible slices]
+  Plan --> Execute[Execute one boundary]
+  Execute --> Validate[Validate behavior and failure]
+
+  Before --> Assess
+  Validate --> After
+
+  subgraph After[Contract-compatible target]
+    NewClient[Same client] --> Edge[External Edge API]
+    Edge --> Orders[Internal Orders API]
+    Edge --> Inventory[Internal Inventory API]
+    Edge --> Fulfillment[Internal Fulfillment API]
+    Orders --> Inventory
+    Fulfillment --> Orders
+    Fulfillment --> Inventory
+    Orders --> OrdersDb[(Orders DB)]
+    Inventory --> InventoryDb[(Inventory DB)]
+    Fulfillment --> FulfillmentDb[(Fulfillment DB)]
+  end
+
+  Characterization[Characterization tests] -. baseline .-> Assess
+  Contract[Legacy vs Edge contract tests] -. parity .-> Validate
+  ServiceTests[Per-service tests] -. ownership and idempotency .-> Validate
+  FailureTests[Unavailable-service tests] -. 503 semantics .-> Validate
+  Compose[Container smoke] -. real boundaries .-> Validate
+  Bicep[Static Bicep build and lint] -. reference-IaC evidence .-> Validate

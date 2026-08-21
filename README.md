@@ -1,5 +1,13 @@
 # Project
 
+## Workshops
+
+- [GitHub Copilot for Azure technical series](workshops/github-copilot-azure/README.md) -
+  three independent 60-minute sessions covering agentic modernization,
+  development, and CI/CD. Month 1 includes runnable .NET 6/.NET 10 applications,
+  a contract-compatible microservices decomposition, containers, and optional
+  optional Azure Container Apps reference infrastructure.
+
 > This repo has been populated by an initial template to help get you started. Please
 > make sure to update the content to build a great experience for community-building.
 
