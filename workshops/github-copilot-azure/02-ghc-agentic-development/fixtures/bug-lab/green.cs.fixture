@@ -1,0 +1,17 @@
+namespace BugLab;
+
+public sealed record CartItem(int Quantity, decimal UnitPrice);
+public sealed record CheckoutResult(decimal Subtotal, decimal Discount, decimal Total);
+
+public static class CheckoutCalculator
+{
+    public static CheckoutResult Calculate(IReadOnlyList<CartItem> items, decimal discountPercent)
+    {
+        var subtotal = items.Sum(item => checked(item.Quantity * item.UnitPrice));
+        var discount = decimal.Round(
+            subtotal * discountPercent / 100m,
+            2,
+            MidpointRounding.AwayFromZero);
+        return new CheckoutResult(subtotal, discount, subtotal - discount);
+    }
+}

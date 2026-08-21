@@ -1,0 +1,56 @@
+{
+  "kind": "sample-evidence-manifest",
+  "sample": true,
+  "release": "ghcr.io/example/release-api@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "evidence": [
+    {
+      "id": "tests",
+      "type": "test",
+      "path": "fixtures/evidence/sample/test-results.txt",
+      "status": "passed",
+      "sha256": "fa5625f463ce9d4d67b8d93d67c9cbeea5e1dfc9cd56a95b9de645d2f9d816c0"
+    },
+    {
+      "id": "dependency-review",
+      "type": "dependency-review",
+      "path": "fixtures/evidence/sample/dependency-review.json",
+      "status": "passed",
+      "sha256": "8b5b3be5165e94b3658d786b3e49c06437b69a509621ef175fcd6b7b1cccb6b4"
+    },
+    {
+      "id": "codeql",
+      "type": "code-scanning",
+      "path": "fixtures/evidence/sample/codeql.json",
+      "status": "passed",
+      "sha256": "d25ac4f0046e9f0e01e97da9d97f798da6a4b6323d4dff8f1c8bba6206f1cb25"
+    },
+    {
+      "id": "image",
+      "type": "container-image",
+      "path": "fixtures/evidence/sample/image.json",
+      "status": "published",
+      "sha256": "ad60703bf89d81a437e31e3fd246647db0fdc2986f0206c9e80c738b7b827100"
+    },
+    {
+      "id": "sbom",
+      "type": "spdx-sbom",
+      "path": "fixtures/evidence/sample/sbom.spdx.json",
+      "status": "passed",
+      "sha256": "fdbf6b145c301d8c06002dd22ef32cd3dc4c81b15bb5781f3358e4f744e3bc6b"
+    },
+    {
+      "id": "attestations",
+      "type": "artifact-attestations",
+      "path": "fixtures/evidence/sample/attestations.json",
+      "status": "passed",
+      "sha256": "7f45108a51c2a26b86a3391c27e2a3ea1a59d85e1d1b9dc9b369e259d391ee9a"
+    },
+    {
+      "id": "production-approval",
+      "type": "environment-approval",
+      "path": "fixtures/evidence/sample/approval.json",
+      "status": "approved",
+      "sha256": "a411c6b3dc1ece71b243a6974e3a97b29472c3ac3b97b1808477684c45f2d1bd"
+    }
+  ]
+}

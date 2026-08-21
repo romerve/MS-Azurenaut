@@ -1,0 +1,14 @@
+flowchart LR
+    PR[Pull request] --> DR[Dependency review]
+    PR --> CQ[CodeQL]
+    PR --> BT[Build and tests]
+    DR --> IMG[Container image by digest]
+    CQ --> IMG
+    BT --> IMG
+    IMG --> SBOM[SPDX SBOM]
+    IMG --> PROV[Build provenance]
+    SBOM --> ATTEST[Artifact attestations]
+    PROV --> ATTEST
+    ATTEST --> SUBJECT["Attested image subject + approved digest"]
+    SUBJECT --> APPROVAL{Protected production environment approval}
+    APPROVAL -->|approved| ACA[Already-existing Azure Container App]

@@ -1,0 +1,9 @@
+{
+  "fixture": "SAMPLE EVIDENCE",
+  "evidenceId": "attestations",
+  "result": "passed",
+  "subjects": [
+    "build-provenance",
+    "sbom"
+  ]
+}

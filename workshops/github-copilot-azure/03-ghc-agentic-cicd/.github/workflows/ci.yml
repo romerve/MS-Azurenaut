@@ -1,0 +1,48 @@
+name: "REFERENCE ONLY - Release API CI"
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "workshops/github-copilot-azure/03-ghc-agentic-cicd/**"
+  push:
+    branches: [main]
+    paths:
+      - "workshops/github-copilot-azure/03-ghc-agentic-cicd/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-api-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: "10.0.x"
+          cache: true
+          cache-dependency-path: workshops/github-copilot-azure/03-ghc-agentic-cicd/tests/Release.Api.Tests/Release.Api.Tests.csproj
+      - name: Restore
+        run: dotnet restore workshops/github-copilot-azure/03-ghc-agentic-cicd/Release.slnx
+      - name: Build API
+        run: >-
+          dotnet build
+          workshops/github-copilot-azure/03-ghc-agentic-cicd/src/Release.Api/Release.Api.csproj
+          --configuration Release --no-restore
+          /p:BuildRevision=${{ github.sha }}
+      - name: Build solution
+        run: >-
+          dotnet build
+          workshops/github-copilot-azure/03-ghc-agentic-cicd/Release.slnx
+          --configuration Release --no-restore
+          /p:BuildRevision=${{ github.sha }}
+      - name: Test
+        run: dotnet test workshops/github-copilot-azure/03-ghc-agentic-cicd/Release.slnx --configuration Release --no-build
+      - name: Validate workshop fixtures
+        run: workshops/github-copilot-azure/03-ghc-agentic-cicd/scripts/validate-workflows.zsh

@@ -1,0 +1,23 @@
+name: "REFERENCE ONLY - broken challenge"
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "workshops/github-copilot-azure/03-ghc-agentic-cicd/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: "10.0.x"
+      - name: Build challenge project
+        # Intentional defect: API is capitalized incorrectly, so this safe CI job fails before deployment.
+        run: dotnet build workshops/github-copilot-azure/03-ghc-agentic-cicd/src/Release.API/Release.API.csproj --configuration Release

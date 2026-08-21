@@ -1,0 +1,13 @@
+=== challenge context ===
+Issue: vague-rate-limit.md
+Acceptance scenarios: 0
+Persistent context layers: 0
+Reviewable evidence command: absent
+Readiness: insufficient
+
+=== solution context ===
+Issue: improved-rate-limit.md
+Acceptance scenarios: 5
+Persistent context layers: 4
+Reviewable evidence command: present
+Readiness: scoped

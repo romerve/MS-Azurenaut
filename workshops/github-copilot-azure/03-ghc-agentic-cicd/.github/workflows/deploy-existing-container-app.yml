@@ -1,0 +1,75 @@
+name: "REFERENCE ONLY - deploy existing Container App"
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_digest:
+        description: "Attested release image digest (sha256:...)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+  packages: read
+  attestations: read
+
+concurrency:
+  group: release-api-production
+  cancel-in-progress: false
+
+jobs:
+  update-existing-app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+    steps:
+      - name: Validate digest
+        env:
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+        run: |
+          if [[ ! "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::image_digest must be a sha256 digest"
+            exit 1
+          fi
+      - name: Sign in to GHCR for verification
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify build provenance and SBOM attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+        run: |
+          image_subject="ghcr.io/${GITHUB_REPOSITORY,,}/release-api"
+          signer_workflow="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/publish-supply-chain.yml"
+          gh attestation verify "oci://$image_subject@$IMAGE_DIGEST" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$signer_workflow" \
+            --deny-self-hosted-runners
+          gh attestation verify "oci://$image_subject@$IMAGE_DIGEST" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$signer_workflow" \
+            --predicate-type "https://spdx.dev/Document" \
+            --deny-self-hosted-runners
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Update the already-existing Container App
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          CONTAINER_APP: ${{ vars.AZURE_CONTAINER_APP_NAME }}
+          IMAGE_SUBJECT: ghcr.io/${{ github.repository }}/release-api
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+        run: >-
+          az containerapp update
+          --resource-group "$RESOURCE_GROUP"
+          --name "$CONTAINER_APP"
+          --image "$IMAGE_SUBJECT@$IMAGE_DIGEST"
+          --output none

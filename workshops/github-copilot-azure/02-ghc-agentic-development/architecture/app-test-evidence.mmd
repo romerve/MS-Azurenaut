@@ -1,0 +1,9 @@
+flowchart TB
+    Client["Client + X-Client-Id"] --> Validation["Request validation"]
+    Validation -->|valid| Limiter["Fixed-window limiter"]
+    Validation -->|invalid| P400["400 validation problem"]
+    Limiter -->|permit| Calculator["Decimal checkout calculator"]
+    Limiter -->|exhausted| P429["429 + Retry-After"]
+    Clock["TimeProvider / manual test clock"] --> Limiter
+    Tests["Acceptance + regression tests"] --> Client
+    Tests --> Clock

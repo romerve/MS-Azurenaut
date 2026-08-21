@@ -1,154 +1,199 @@
-# Month 2 Session Guide — Agentic Development: Context-Engineered Delivery & Grounded Debugging
+# Month 2 facilitator session guide
 
-**Duration:** 60 minutes · **Format:** Live demo-driven session, single presenter or presenter + co-driver · **Audience:** see [README.md](./README.md)
+**Duration:** 60 minutes
 
-> **Note on demos:** All commands, file contents, and "Copilot says…" excerpts in this guide are **illustrative facilitator scripts** to run live against a real repository during the session. They are not captured transcripts of an actual run, and outputs will vary by repository, model, and Copilot version — rehearse against your own demo repo before presenting.
+**Primary topic:** Context-engineered issue-to-feature delivery
+
+**Secondary topic:** Grounded red-green-refactor debugging
+
+This month is self-contained. Use the checked-in fixtures and commands; do not depend
+on Month 1, Azure, a live coding-agent result, or a fixed model transcript.
+
+## Before the room
+
+1. Run `./scripts/validate.zsh`.
+2. Open the vague and improved issue fixtures side by side.
+3. Open the context-flow Mermaid source and test file.
+4. Run `./scripts/reset.zsh`, then leave the terminal at this folder.
+5. If using a live agent, treat its response as variable narration and use the
+   deterministic scripts for the scored outcome.
 
 ## Timing overview
 
 | Time | Duration | Segment |
-|---|---|---|
-| 0:00–0:05 | 5 min | Welcome, series framing, session objectives |
-| 0:05–0:10 | 5 min | Primary topic — Challenge |
-| 0:10–0:14 | 4 min | Primary topic — Challenge Demo |
-| 0:14–0:20 | 6 min | Primary topic — Solution |
-| 0:20–0:30 | 10 min | Primary topic — Solution Demo |
-| 0:30–0:33 | 3 min | Primary topic — Outcome |
-| 0:33–0:35 | 2 min | Primary topic — Closing |
-| 0:35–0:38 | 3 min | Secondary topic — Challenge |
-| 0:38–0:41 | 3 min | Secondary topic — Challenge Demo |
-| 0:41–0:45 | 4 min | Secondary topic — Solution |
-| 0:45–0:52 | 7 min | Secondary topic — Solution Demo |
-| 0:52–0:54 | 2 min | Secondary topic — Outcome |
-| 0:54–0:55 | 1 min | Secondary topic — Closing |
-| 0:55–1:00 | 5 min | Session closing, Q&A, artifact recap |
+|---|---:|---|
+| 00–05 | 5 min | Welcome, independence, health check |
+| 05–10 | 5 min | Primary — Challenge |
+| 10–14 | 4 min | Primary — Challenge Demo |
+| 14–20 | 6 min | Primary — Solution |
+| 20–30 | 10 min | Primary — Solution Demo |
+| 30–33 | 3 min | Primary — Outcome |
+| 33–35 | 2 min | Primary — Closing |
+| 35–38 | 3 min | Secondary — Challenge |
+| 38–41 | 3 min | Secondary — Challenge Demo |
+| 41–45 | 4 min | Secondary — Solution |
+| 45–52 | 7 min | Secondary — Solution Demo |
+| 52–54 | 2 min | Secondary — Outcome |
+| 54–55 | 1 min | Secondary — Closing |
+| 55–60 | 5 min | Workshop closing |
 
----
-
-## Primary topic: Context-engineered issue-to-feature delivery
-
-**Scope:** GitHub issues → custom instructions → custom agents → prompt files → acceptance tests → reviewable pull requests.
+## Primary topic: Context-engineered feature delivery
 
 ### Challenge
 
-Teams adopting Copilot's agentic features (coding agent, agent mode) frequently see the same failure mode: the agent produces code that compiles but doesn't match the team's conventions, misses acceptance criteria that were only "in someone's head," or opens a pull request so broad that no reviewer can meaningfully approve it in a reasonable time. The root cause is almost always **missing or implicit context** — the issue doesn't state what "done" means in a testable way, the repository has no persisted conventions for Copilot to read, and there's no scoped, reusable way to hand the agent a well-formed task. The result is either agents that are avoided after one bad experience, or PRs that get rubber-stamped without real review.
+A one-line issue such as “Add rate limiting” omits policy, identity, response
+semantics, test seams, and non-goals. An agent can produce plausible code while
+reviewers have no objective definition of done.
+
+Ask attendees which decisions are product decisions rather than implementation
+details: client identity, permit count, window behavior, invalid-request accounting,
+and `Retry-After`.
 
 ### Challenge Demo
 
-Facilitator opens a plain GitHub issue with only a one-line title (e.g., "Add rate limiting to the checkout API") and no acceptance criteria, then assigns it to Copilot coding agent (or drives it live in agent mode) with no repository custom instructions present. Narrate what happens:
+Run:
 
-- The agent has to guess at the rate-limiting strategy, the library/pattern to use, and where configuration should live, because none of that is written down anywhere it can read.
-- The resulting diff touches more files than necessary and invents a testing approach that doesn't match the repo's existing test style.
-- There is no acceptance test to check the PR against, so "is this done?" is a subjective call.
+```zsh
+./scripts/context-demo.zsh challenge
+```
+
+Show [`issues/vague-rate-limit.md`](./issues/vague-rate-limit.md). The script reports
+zero acceptance scenarios, zero persistent context layers, and no rerunnable evidence
+command. This is deterministic input analysis, not a claim about what a model would do.
 
 ### Solution
 
-Three complementary pieces of persisted, reusable context turn a vague ask into a scoped, checkable task:
+Introduce four persistent context layers:
 
-1. **Custom instructions** — a repository-wide `.github/copilot-instructions.md` (plus optional path-scoped `.github/instructions/*.instructions.md` files using `applyTo` globs) that persist conventions, architecture notes, and "always/never" rules so every Copilot surface — coding agent, agent mode, chat, code review — reads the same ground truth automatically.
-2. **Custom agents** (`.github/agents/*.agent.md`) — a named persona/toolset for a recurring job (e.g., "feature-delivery agent" that always writes a test first, keeps diffs scoped to the issue, and stops to ask before touching CI config).
-3. **Prompt files** (`.github/prompts/*.prompt.md`) — reusable, parameterized `/command` templates for well-scoped, repeatable tasks (e.g., `/implement-issue` that takes an issue reference and acceptance criteria as input variables).
+1. repository-wide invariants;
+2. path-scoped API and test guidance;
+3. a constrained feature-delivery custom agent;
+4. reusable assess, plan, implement, and review prompts.
 
-Layered on top, writing **acceptance criteria as testable statements directly in the issue** (Given/When/Then or an explicit list of test cases) gives both the agent and the human reviewer the same objective definition of done — and keeps the resulting PR **reviewable**: one linked issue, a diff scoped to that issue's acceptance criteria, and test evidence attached.
+Pair them with an issue whose Given/When/Then criteria define normal, boundary,
+isolation, reset, and validation behavior. The implementation uses `TimeProvider` so
+the window can be advanced in a test without sleeping.
 
 ### Solution Demo
 
-Facilitator repeats the same scenario with context engineered in:
+Run:
 
-1. Show a `.github/copilot-instructions.md` excerpt for the demo repo, e.g.:
-   ```markdown
-   # Copilot instructions
+```zsh
+./scripts/context-demo.zsh solution
+dotnet test GitHubCopilotAzure.Development.slnx -c Release \
+  --filter "FullyQualifiedName~CheckoutAcceptanceTests"
+```
 
-   ## Conventions
-   - Rate limiting uses the existing `RateLimiter` middleware in `src/middleware/`.
-   - Every new endpoint behavior change requires a corresponding test in `tests/`.
-   - Keep pull requests scoped to a single linked issue; do not refactor unrelated code.
-   ```
-2. Show a path-scoped instructions file limiting API-specific guidance to `src/api/**` via `applyTo`.
-3. Show a minimal custom agent definition (`.github/agents/feature-delivery.agent.md`) that names the persona, the tools it may use, and the "write a failing test first" rule.
-4. Rewrite the same issue with explicit acceptance criteria (e.g., "Given more than 100 requests/minute from one client, When the limit is exceeded, Then the API returns HTTP 429 with a `Retry-After` header").
-5. Assign the issue to Copilot coding agent (or drive the equivalent in agent mode using a `/implement-issue` prompt file), and walk through the resulting pull request: scoped diff, a new test that encodes the acceptance criteria, and a description that links back to the issue.
-6. Open the PR in Copilot code review (or point out where a human reviewer would look first) and note how much less time review takes when the diff is scoped and self-evidenced.
+Walk the evidence chain:
+
+1. compare the improved issue with the vague fixture;
+2. open `.github/copilot-instructions.md` and the path-scoped files;
+3. show the feature-delivery agent's stop conditions;
+4. trace `X-Client-Id` through validation and `FixedWindowClientRateLimiter`;
+5. identify it as a workshop seam that a production gateway must derive from
+   authenticated identity, then show the bounded fail-closed tracking capacity;
+6. show `ManualTimeProvider.Advance` proving the reset boundary;
+7. map each criterion to `CheckoutAcceptanceTests`;
+8. use the nested PR template to record the exact command.
+
+Optionally ask a live agent to assess the improved issue. Do not promise its wording.
+Score the demonstration using the checked-in tests and context script.
 
 ### Outcome
 
-- Pull requests generated by agents are diff-scoped to a single issue, reference explicit acceptance criteria, and include the test that proves them — cutting reviewer time and rework cycles.
-- Conventions live in version-controlled files (`copilot-instructions.md`, `.instructions.md`, `.agent.md`, `.prompt.md`) instead of tribal knowledge, so they compound across every future issue instead of being re-explained each time.
-- Teams gain a repeatable, auditable pattern: issue with acceptance criteria → custom-instruction-aware agent → reviewable PR — that scales to more contributors without a proportional increase in review overhead.
+- The issue defines five observable scenarios and explicit non-goals.
+- Per-client limits are isolated and configurable.
+- The third request under the test configuration returns `429` and `Retry-After: 60`.
+- Invalid requests return validation problem details without consuming permits.
+- Reviewers can rerun one exact filtered command.
 
 ### Closing
 
-The throughline: **an agent is only as good as the context you persist for it.** Write conventions once into custom instructions, package recurring jobs into custom agents and prompt files, and state acceptance criteria as testable statements in the issue itself — and the review bottleneck moves from "does this even make sense" to "does this meet the bar," which is a much faster review. Artifact to take away: the `copilot-instructions.md` / `.instructions.md` / `.agent.md` / `.prompt.md` starter set referenced above. Next: what happens when the agent's own test claims don't hold up — that's the secondary topic.
+Persist context once, then require executable evidence for each acceptance claim.
+The take-home assets are the issue template, instructions, custom agent, prompts,
+PR checklist, and acceptance-test pattern.
 
----
-
-## Secondary topic: Agentic red-green-refactor loops grounded in reproducible evidence
-
-**Scope:** Using Copilot agent mode/coding agent to drive test-driven debugging (red → green → refactor) with evidence that can be independently reproduced, not just narrated.
+## Secondary topic: Grounded red-green-refactor debugging
 
 ### Challenge
 
-When an agent is asked to "fix the bug," a common failure mode is that it reports success — "I fixed the issue and the tests pass" — without ever having actually reproduced the failure first, or without the reviewer being able to reproduce the claimed fix independently. This produces confident-sounding but ungrounded claims: a test that was already passing, a fix that only works in the agent's transcript, or a refactor applied on top of a fix that was never actually verified red-to-green. Debugging sessions like this erode trust in agentic workflows faster than almost anything else.
+“Checkout sometimes fails for large carts” invites a speculative fix. A hidden
+integer-cents conversion can overflow while ordinary totals pass. A narrated “fixed”
+claim does not prove the reported boundary.
 
 ### Challenge Demo
 
-Facilitator shows a bug report with a vague repro ("checkout sometimes fails for large carts") and asks an agent to fix it directly, without first asking for a reproduction. Narrate what typically goes wrong: the agent proposes a code change and a chat message asserting the bug is fixed, but there is no new failing test that was observed to fail before the change and pass after — so there is no evidence beyond the agent's own claim, and a reviewer has no fast way to confirm the fix actually addresses the reported symptom.
+Run:
+
+```zsh
+./scripts/bug-lab.zsh red
+```
+
+The script creates a temporary test project, copies the buggy calculator fixture, and
+requires the large-cart assertion to fail. If it unexpectedly passes, the script
+itself fails.
 
 ### Solution
 
-Ground the loop in the classic **red-green-refactor** discipline, but make each step produce an artifact a human can independently check:
+Use a three-artifact loop:
 
-- **Red:** require the agent (or the facilitator, working with the agent) to first write or identify a test that reproduces the reported failure, run it, and show the failure output. This is the evidence that the bug is real and understood.
-- **Green:** have the agent make the smallest change that turns that specific test green, then re-run the full relevant test suite to confirm no regressions — the before/after test run is the evidence the fix works.
-- **Refactor:** only after green, ask the agent to clean up the implementation with the now-passing test suite as a safety net, re-running tests after each refactor step.
+- **Red:** one focused failing assertion proves the defect is understood.
+- **Green:** decimal multiplication removes the integer overflow with the smallest
+  change.
+- **Refactor:** named helpers improve clarity while the same test remains green.
 
-The key discipline for the facilitator/reviewer: **ask for the command and its output at every step**, and re-run the failing/passing test yourself rather than accepting a narrated claim. Copilot agent mode's ability to execute terminal commands and read their actual output (rather than only generating code) is what makes this loop groundable in evidence instead of assertion.
+Each stage is a separate fixture copied into a generated workspace. The production
+solution is green before, during, and after the demonstration.
 
 ### Solution Demo
 
-Facilitator drives the same "checkout fails for large carts" scenario end to end:
+Run:
 
-1. **Red:** ask the agent to first write a test that reproduces the reported symptom (e.g., a checkout with 500 line items), run it, and show the failing output/stack trace live in the terminal — this is the reproducible evidence step, not a claim.
-2. **Green:** ask the agent to make the minimal fix, re-run the same test and the surrounding test file/suite, and show the test suite go from red to green in the terminal output.
-3. **Refactor:** ask the agent to simplify or clean up the fix (e.g., extract a helper, remove duplication) and re-run the full suite again after the refactor to confirm it's still green.
-4. Close the loop by showing the PR description: it links the original bug report, includes the specific test added, and shows the red→green test run as the evidence trail — something a reviewer can re-run themselves rather than take on faith.
+```zsh
+./scripts/bug-lab.zsh all
+dotnet test GitHubCopilotAzure.Development.slnx -c Release \
+  --filter "FullyQualifiedName~Large_cart_uses_decimal_arithmetic_without_overflow"
+```
+
+Point out the stage markers and actual xUnit result. Compare the buggy integer-cents
+line with the decimal green fixture, then the helper-based refactor. Avoid pasting a
+model response into evidence.
 
 ### Outcome
 
-- Every debugging fix carries reproducible evidence (a failing test observed before the fix, a passing suite observed after) instead of an unverified narrative claim.
-- Reviewers can independently re-run the same test commands the agent ran, cutting "trust but don't verify" risk out of agent-assisted debugging.
-- The red-green-refactor discipline keeps fixes minimal and scoped, and the subsequent refactor step is protected by the same tests — so cleanup doesn't silently reintroduce the bug.
+- The same boundary test is observed red, green, and green-after-refactor.
+- The checked-in API calculates a 2,500,000,000 subtotal and 2,250,000,000 discounted
+  total using decimal arithmetic.
+- The exact reproduction is independent of model availability.
 
 ### Closing
 
-The takeaway: treat an agent's claim of "fixed" the same way you'd treat a colleague's — ask to see it fail, then ask to see it pass, then let it refactor with the safety net in place. That discipline is what turns an agent from a fast typist into a debugging partner you can actually trust. This grounded-evidence habit — reproduce, fix, verify, refactor — is the same discipline Month 3 applies to release summaries and CI failure remediation: evidence over assertion, everywhere agents touch the delivery pipeline.
+Require the command and observed result, not a confident summary. The take-home asset
+is an isolated bug-lab pattern that can demonstrate failure safely.
 
----
+## Workshop closing
 
-## Demo environment setup notes
+Reopen [the facilitator checklist](./facilitator/review-checklist.md). Ask attendees
+to identify one claim and its evidence. End with the throughline: explicit context
+constrains the work; reproducible tests ground the result.
 
-- Use a demo repository with an existing test suite and CI (any stack) so the red-green-refactor demo has a real command to run (`npm test`, `dotnet test`, `pytest`, etc.).
-- Pre-stage (but do not commit until the demo) the `.github/copilot-instructions.md`, an `.instructions.md` example, a `.github/agents/*.agent.md` file, and a `.github/prompts/*.prompt.md` file so you can reveal them incrementally rather than typing them live.
-- Have Copilot coding agent enabled on the demo repository ahead of time, and confirm agent mode is active in your IDE before presenting — verify both in a dry run.
-- Prepare one issue with only a title (for the Challenge Demo) and one duplicate with full acceptance criteria (for the Solution Demo) so the contrast is visible without live-editing under time pressure.
+## Fallbacks
 
-## Outcomes checklist (for facilitators to confirm before closing)
+- Live agent unavailable: use `context-demo.zsh` and the static customization files.
+- NuGet unavailable: use the pre-restored cache from rehearsal and avoid clearing it.
+- Port conflict: skip HTTP smoke or set another `PORT`.
+- Time running short: run `bug-lab.zsh all` without opening every fixture.
 
-- [ ] Attendees can name the four context artifacts: custom instructions, path-scoped instructions, custom agents, prompt files.
-- [ ] Attendees saw a before/after contrast: vague issue → broad diff, vs. scoped issue + context → reviewable diff.
-- [ ] Attendees saw a real red→green→refactor terminal sequence, not a narrated claim.
-- [ ] Attendees leave with (or know where to find) the starter template files referenced in this guide.
+## Reset
+
+```zsh
+./scripts/reset.zsh
+git status --short
+```
+
+Only generated `.demo-workspaces` content is removed.
 
 ## References
 
-- [About customizing GitHub Copilot responses (custom instructions)](https://docs.github.com/en/copilot/concepts/prompting/response-customization) — GitHub Docs
-- [Adding repository custom instructions for GitHub Copilot](https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/add-custom-instructions/add-repository-instructions) — GitHub Docs
-- [Prompt files](https://docs.github.com/en/copilot/tutorials/customization-library/prompt-files) — GitHub Docs
-- [Use prompt files in VS Code](https://code.visualstudio.com/docs/agent-customization/prompt-files) — Visual Studio Code Docs
-- [About GitHub Copilot cloud agent](https://docs.github.com/en/copilot/concepts/agents/cloud-agent/about-cloud-agent) — GitHub Docs
-- [Research, plan, and iterate on code changes with Copilot cloud agent](https://docs.github.com/en/copilot/how-tos/copilot-on-github/use-copilot-agents/research-plan-iterate) — GitHub Docs
-- [Using GitHub Copilot code review](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review) — GitHub Docs
-- [Pull requests](https://docs.github.com/en/pull-requests/reference/pull-requests) — GitHub Docs
-- [Build with agents in VS Code](https://code.visualstudio.com/docs/agents/overview) — Visual Studio Code Docs
-
-*References were verified as live official GitHub Docs / Microsoft Learn / Visual Studio Code Docs pages at the time this guide was written. Re-verify links periodically, as Copilot documentation paths are updated frequently.*
+The maintained official reference list is in
+[README.md](./README.md#official-references).

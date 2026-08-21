@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/Checkout.Api/Checkout.Api.csproj" />
+  <Project Path="tests/Checkout.Api.Tests/Checkout.Api.Tests.csproj" />
+</Solution>

@@ -9,8 +9,8 @@ The series intentionally moves left-to-right across the delivery lifecycle: mode
 | Month | Theme | Primary topic | Secondary topic | Status |
 |---|---|---|---|---|
 | [Month 1 — Agentic Modernization](./01-ghc-agentic-modernizatoin/) | Decomposing an existing Azure workload with Copilot | Agent-led assessment and .NET 10 decomposition into Edge, Orders, Inventory, and Fulfillment services | Contract/failure proof, managed identity, and observability | Complete runnable before/after workshop |
-| [Month 2 — Agentic Development](./02-ghc-agentic-development/) | Context-engineered delivery from issue to reviewable PR | Context-engineered issue-to-feature delivery (issues, custom instructions, custom agents, prompt files, acceptance tests, reviewable changes) | Agentic test/debug red-green-refactor loops grounded in reproducible evidence | Complete standalone outline |
-| [Month 3 — Agentic CI/CD](./03-ghc-agentic-cicd/) | Operating and securing the pipeline that ships to Azure | Agent-assisted GitHub Actions authoring and failure remediation for containerized Azure workloads (OIDC, least privilege) | Release safety and supply-chain evidence (dependency review, code scanning, SBOM/attestation, protected environments, grounded release summaries) | Complete standalone outline |
+| [Month 2 — Agentic Development](./02-ghc-agentic-development/) | Context-engineered delivery from issue to reviewable PR | Context-engineered issue-to-feature delivery (issues, custom instructions, custom agents, prompt files, acceptance tests, reviewable changes) | Agentic test/debug red-green-refactor loops grounded in reproducible evidence | Complete runnable workshop |
+| [Month 3 — Agentic CI/CD](./03-ghc-agentic-cicd/) | Operating and securing the pipeline that ships to Azure | Agent-assisted GitHub Actions authoring and failure remediation for containerized Azure workloads (OIDC, least privilege) | Release safety and supply-chain evidence (dependency review, code scanning, SBOM/attestation, protected environments, grounded release summaries) | Complete runnable workshop |
 
 ## Who this series is for
 
@@ -31,18 +31,22 @@ Each month folder contains:
 
 - **`README.md`** — audience, prerequisites, learning objectives, and a quick-reference agenda.
 - **`session-guide.md`** — the full facilitator guide: minute-by-minute timing, the Challenge/Challenge Demo/Solution/Solution Demo/Outcome/Closing narrative for both topics, demo flow and setup notes, outcomes checklist, and current official references.
+- **`talk-track.md` and `demo-runbook.md`** — minute boundaries, exact commands,
+  expected evidence, troubleshooting, and reset paths.
+- **Runnable .NET 10 code and tests** plus architecture and facilitator assets.
 
-Month 1 includes the runnable workshop and take-home assets. Per the series
-scope, Months 2 and 3 are complete standalone facilitator outlines rather than
-bundled demo repositories; their setup notes identify the examples a presenter
-should prepare in a disposable demo repository.
+All three months are complete runnable workshops. Each is independently buildable
+and makes no assumption that attendees completed another month.
 
 ## Prerequisites common to Month 2 and Month 3
 
 - A GitHub.com organization or repository with **GitHub Copilot** enabled (Business or Enterprise recommended for coding agent, Copilot code review, and org-level custom instructions).
 - Access to **GitHub Copilot in Visual Studio Code** (or another Copilot-enabled IDE) with agent mode available.
-- An **Azure subscription** with permission to create a resource group and a Microsoft Entra app registration (for Month 3's OIDC demo).
-- Familiarity with Git, pull requests, and at least one containerized Azure compute target (Azure Container Apps or Azure Kubernetes Service).
+- Docker is optional for local container smoke exercises.
+- An already-existing Azure Container App, Azure Container Registry, and preconfigured
+  OIDC identity are optional for Month 3's reference deployment workflow. The workshop
+  does not provision Azure resources or identities.
+- Familiarity with Git, pull requests, and containerized application delivery.
 - The specific prerequisites for each month are restated in that month's `README.md` — no assumption is made that attendees sat through a prior month.
 
 ## Suggested delivery cadence
