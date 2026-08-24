@@ -1,0 +1,7 @@
+{
+  "fixture": "SAMPLE EVIDENCE",
+  "evidenceId": "dependency-review",
+  "result": "passed",
+  "failOnSeverity": "high",
+  "introducedHighOrCritical": 0
+}

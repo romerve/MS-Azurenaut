@@ -1,0 +1,7 @@
+{
+  "fixture": "SAMPLE EVIDENCE",
+  "evidenceId": "image",
+  "registry": "ghcr.io/example/release-api",
+  "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "result": "published"
+}

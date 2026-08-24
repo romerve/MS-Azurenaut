@@ -1,0 +1,14 @@
+{
+  "kind": "generated-evidence-manifest",
+  "sample": false,
+  "release": "replace-with-image-subject-at-digest",
+  "evidence": [
+    {
+      "id": "test-results",
+      "type": "test",
+      "path": "fixtures/evidence/generated/test-results.txt",
+      "status": "replace",
+      "sha256": "replace-with-lowercase-sha256"
+    }
+  ]
+}

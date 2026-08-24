@@ -1,0 +1,11 @@
+**/bin
+**/obj
+.git
+.github
+fixtures
+docs
+scripts
+templates
+tests
+Release.slnx
+*.md

@@ -1,53 +1,150 @@
-# Month 2 — Agentic Development: Context-Engineered Delivery & Grounded Debugging
+# Month 2 — Agentic Development
 
-A standalone 60-minute session on using GitHub Copilot's agentic features to take work **from a GitHub issue to a reviewable pull request**, and to run **test/debug loops** that are grounded in reproducible evidence rather than guesswork. No prior session in this series is required.
+A complete, standalone 60-minute workshop for turning an underspecified issue into
+a reviewable .NET 10 feature, then debugging a credible large-cart defect with
+reproducible red-green-refactor evidence. No prior month or Azure subscription is
+required.
 
-## Audience
+## Outcomes
 
-- Application developers and tech leads shipping features and fixing bugs in an Azure-hosted codebase.
-- Engineering managers and platform teams evaluating how to standardize Copilot usage (custom instructions, custom agents, prompt files) across a repository or organization.
-- Anyone who has used Copilot for autocomplete but not yet for structured, repository-aware agentic workflows.
+Attendees will:
+
+1. Convert a vague request into Given/When/Then criteria and persistent repository
+   context.
+2. Deliver deterministic per-client checkout rate limiting with configurable permit
+   and window settings, `429`, and `Retry-After`.
+3. Use an abstract clock to prove time-window behavior without sleeps.
+4. Reproduce, fix, and refactor a large-cart integer-overflow defect in an isolated
+   generated workspace while the checked-in solution stays green.
+5. Review claims against executable tests instead of a model transcript.
 
 ## Prerequisites
 
-- A GitHub repository with **Issues** enabled and at least write access.
-- **GitHub Copilot** enabled on the account/organization, ideally Business or Enterprise (needed for Copilot coding agent and Copilot code review).
-- **Visual Studio Code** with the GitHub Copilot and GitHub Copilot Chat extensions, and **agent mode** available.
-- A local clone of the demo repository with a runnable test suite (any language — the patterns are language-agnostic).
-- Comfort with basic Git/GitHub flow: branches, commits, pull requests, reviews.
+- .NET SDK 10
+- zsh, curl, and Git
+- Optional: Docker for the image build exercise
+- Optional: GitHub Copilot in VS Code for the live agent interaction
 
-No Azure subscription is required for this session — Month 2 focuses on the development loop, not deployment.
+No Azure resources, secrets, prior workshop, or live model response is required.
 
-## Learning objectives
+## 60-minute agenda
 
-By the end of this session, attendees will be able to:
-
-1. Turn a GitHub issue into Copilot-usable context using **custom instructions** (`.github/copilot-instructions.md` and path-scoped `.instructions.md` files), **custom agents**, and **prompt files**, and use Copilot coding agent (or agent mode) to implement the change on a branch.
-2. Define **acceptance tests** up front so an agent's output has an objective pass/fail signal, and structure the resulting pull request to be efficiently **reviewable** (scoped diff, linked issue, test evidence).
-3. Run an **agentic red-green-refactor loop**: reproduce a failing test as evidence, let the agent drive it to green, then refactor with the safety net still in place — and recognize when the "evidence" an agent presents is not actually reproducible.
-
-## Session agenda at a glance (60 minutes)
-
-| Time | Segment | Topic |
+| Time | Topic | Narrative |
 |---|---|---|
-| 0:00 – 0:05 | Welcome & framing | Series context, session goals |
-| 0:05 – 0:35 | **Primary topic** | Context-engineered issue-to-feature delivery (Challenge → Closing) |
-| 0:35 – 0:55 | **Secondary topic** | Agentic red-green-refactor loops grounded in reproducible evidence (Challenge → Closing) |
-| 0:55 – 1:00 | Session closing | Recap, artifacts, next steps |
+| 00–05 | Welcome and baseline | Independence, goals, local health check |
+| 05–35 | Primary: issue-to-feature delivery | Challenge → Challenge Demo → Solution → Solution Demo → Outcome → Closing |
+| 35–55 | Secondary: grounded debugging | Challenge → Challenge Demo → Solution → Solution Demo → Outcome → Closing |
+| 55–60 | Workshop closing | Evidence recap and take-home path |
 
-Full minute-by-minute timing, narration notes, and demo scripts are in **[session-guide.md](./session-guide.md)**.
+See [talk-track.md](./talk-track.md) for every minute boundary and
+[session-guide.md](./session-guide.md) for facilitator narration.
 
-This month is a complete facilitator outline, not a bundled runnable demo
-repository. Prepare the examples below in a disposable repository before the
-session, following the setup notes in the guide.
+## Quick start
 
-## Patterns attendees can reproduce
+```zsh
+cd workshops/github-copilot-azure/02-ghc-agentic-development
+dotnet build src/Checkout.Api/Checkout.Api.csproj -c Release
+dotnet build GitHubCopilotAzure.Development.slnx -c Release
+dotnet test GitHubCopilotAzure.Development.slnx -c Release --no-build
+./scripts/context-demo.zsh all
+./scripts/bug-lab.zsh all
+./scripts/smoke-test.zsh
+```
 
-- Repository and path-scoped custom-instruction patterns.
-- A custom-agent and prompt-file pattern for issue-to-PR delivery.
-- An issue-template pattern that captures Copilot-consumable acceptance criteria.
-- A red-green-refactor checklist for verifying an agent's fix with reproducible evidence.
+Or run the complete local path:
 
-## Related session
+```zsh
+./scripts/validate.zsh
+```
 
-The secondary topic in this session (grounded debugging) pairs naturally with **Month 3's** release-safety topic — grounded evidence for a fix here becomes grounded evidence for a release summary there. See [Month 3](../03-ghc-agentic-cicd/).
+## Runnable application
+
+`POST /checkout` requires `X-Client-Id` and JSON:
+
+```json
+{
+  "items": [{ "quantity": 2, "unitPrice": 12.50 }],
+  "discountPercent": 10
+}
+```
+
+The response is:
+
+```json
+{"subtotal":25.00,"discount":2.50,"total":22.50}
+```
+
+The default fixed window permits three valid requests per client every 60 seconds.
+Settings live in
+[`src/Checkout.Api/appsettings.json`](./src/Checkout.Api/appsettings.json).
+Invalid requests return `400` and do not consume a permit. An exhausted client
+receives `429`, problem details, and integer `Retry-After` seconds.
+Cart count, quantity, unit price, and discount bounds reject unsafe arithmetic as
+validation problems rather than allowing an overflow to become a server error.
+
+`X-Client-Id` is intentionally a visible workshop seam. A production gateway must
+derive or overwrite it from authenticated identity; it must not trust arbitrary
+caller input. The in-memory lab limiter bounds active tracked clients and fails
+closed with `429` when that capacity is full, preventing unbounded key retention.
+
+## Workshop assets
+
+| Asset | Purpose |
+|---|---|
+| [`issues/vague-rate-limit.md`](./issues/vague-rate-limit.md) | Safe challenge input |
+| [`issues/improved-rate-limit.md`](./issues/improved-rate-limit.md) | Testable issue example |
+| [`.github/`](./.github/) | Inactive nested instructions, agent, prompts, issue and PR templates |
+| [`scripts/context-demo.zsh`](./scripts/context-demo.zsh) | Deterministic challenge/solution contrast |
+| [`scripts/bug-lab.zsh`](./scripts/bug-lab.zsh) | Isolated red → green → refactor lab |
+| [`expected-outputs/`](./expected-outputs/) | Stable markers, not fabricated transcripts |
+| [`architecture/`](./architecture/) | Context-flow and app/test Mermaid sources |
+| [`facilitator/review-checklist.md`](./facilitator/review-checklist.md) | Live review gate |
+| [`demo-runbook.md`](./demo-runbook.md) | Exact commands, fallback, and reset |
+
+Because `.github` is nested under this month, its customization files are examples
+and do not activate for the parent repository.
+
+## Test evidence
+
+Focused rate-limit acceptance tests:
+
+```zsh
+dotnet test GitHubCopilotAzure.Development.slnx -c Release \
+  --filter "FullyQualifiedName~CheckoutAcceptanceTests"
+```
+
+Large-cart regression:
+
+```zsh
+dotnet test GitHubCopilotAzure.Development.slnx -c Release \
+  --filter "FullyQualifiedName~Large_cart_uses_decimal_arithmetic_without_overflow"
+```
+
+The bug lab intentionally runs a failing fixture in a disposable
+`.demo-workspaces/bug-lab` directory, verifies that failure, then replaces it with
+green and refactored fixtures. It never makes the checked-in application red.
+
+## Architecture
+
+- [Context to evidence flow](./architecture/context-flow.mmd)
+- [Checkout app and test seams](./architecture/app-test-evidence.mmd)
+
+## Troubleshooting and reset
+
+- SDK mismatch: `dotnet --version` must report `10.x`.
+- Port in use: run `PORT=5182 ./scripts/smoke-test.zsh`.
+- Stale demo files: run `./scripts/reset.zsh`.
+- Package restore unavailable: restore once on a connected network, then rerun with
+  the local NuGet cache.
+- If the red fixture passes, confirm the script copied `buggy.cs.fixture`; the script
+  treats an unexpected pass as a failure.
+
+## Official references
+
+- [Repository custom instructions](https://docs.github.com/en/copilot/how-tos/configure-custom-instructions/add-repository-instructions)
+- [Custom agents](https://docs.github.com/en/copilot/customizing-copilot/custom-agents/configuring-custom-agents)
+- [Prompt files in VS Code](https://code.visualstudio.com/docs/copilot/customization/prompt-files)
+- [ASP.NET Core integration tests](https://learn.microsoft.com/aspnet/core/test/integration-tests)
+- [TimeProvider overview](https://learn.microsoft.com/dotnet/standard/datetime/timeprovider-overview)
+- [ASP.NET Core error handling](https://learn.microsoft.com/aspnet/core/fundamentals/error-handling)
+- [HTTP 429 status](https://www.rfc-editor.org/rfc/rfc6585#section-4)

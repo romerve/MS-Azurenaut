@@ -1,0 +1,7 @@
+flowchart LR
+    Issue["Issue with Given/When/Then"] --> Instructions["Repository + path instructions"]
+    Instructions --> Agent["Feature-delivery agent"]
+    Agent --> Prompts["Assess / plan / implement / review prompts"]
+    Prompts --> Change["Scoped implementation"]
+    Change --> Evidence["Focused + full test evidence"]
+    Evidence --> Review["Reviewable pull request"]

@@ -1,0 +1,8 @@
+{
+  "fixture": "SAMPLE EVIDENCE",
+  "evidenceId": "production-approval",
+  "environment": "production",
+  "result": "approved",
+  "actor": "sample-reviewer",
+  "timestamp": "2026-01-01T00:05:00Z"
+}

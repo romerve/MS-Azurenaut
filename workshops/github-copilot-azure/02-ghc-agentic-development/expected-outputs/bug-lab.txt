@@ -1,0 +1,10 @@
+The `red` stage exits through an expected failing xUnit assertion and prints:
+
+RED confirmed: large-cart regression test failed as expected.
+
+The `green` and `refactor` stages each report one passing test and print:
+
+GREEN confirmed: focused regression test passed.
+REFACTOR confirmed: focused regression test remained green.
+
+Exact SDK timings and stack-trace line numbers are intentionally not fixed.

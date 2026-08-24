@@ -1,0 +1,16 @@
+namespace BugLab;
+
+public sealed class LargeCartTests
+{
+    [Fact]
+    public void Large_cart_preserves_decimal_total_and_discount()
+    {
+        var result = CheckoutCalculator.Calculate(
+            [new CartItem(50_000, 50_000m)],
+            10m);
+
+        Assert.Equal(2_500_000_000m, result.Subtotal);
+        Assert.Equal(250_000_000m, result.Discount);
+        Assert.Equal(2_250_000_000m, result.Total);
+    }
+}
