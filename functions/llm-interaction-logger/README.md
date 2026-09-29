@@ -111,9 +111,34 @@ curl -X POST http://localhost:7071/api/llm-log/response \
 
 ## Deploy
 
+Deployment uses the [Azure Developer CLI (`azd`)](https://learn.microsoft.com/azure/developer/azure-developer-cli/). From this folder:
+
 ```bash
-azd up
+azd auth login
+azd up      # prompts for an environment name, subscription, region and resource group
+azd down    # deletes everything when you're done
 ```
+
+`azd up` deploys `infra/main.bicep`, then builds `src/LlmInteractionLogger` and publishes it to the function app.
+
+### How azd is wired in
+
+- **`azure.yaml`** is the `azd` project file. It points to the Bicep in `infra/` and declares one service, `llm-interaction-logger`, hosted as a function.
+- **`infra/main.parameters.json`** uses `${AZURE_ENV_NAME}` and `${AZURE_LOCATION}`, which `azd` fills in from your environment.
+- **`azd-env-name` tag**: every resource gets this tag so you can see which `azd` environment it belongs to.
+- **`azd-service-name` tag**: on the function app. `azd deploy` uses this tag to find where to publish the service from `azure.yaml`, so the two names must match.
+- **Bicep outputs**: `AZURE_FUNCTION_APP_NAME`, `FUNCTION_ENDPOINT` and `APPLICATIONINSIGHTS_NAME` are saved to `.azure/<env>/.env`. Run `azd env get-values` to see them.
+
+### Without azd
+
+The Bicep is plain Bicep, and the `azd` tags don't matter if you don't use `azd`:
+
+```bash
+az deployment group create -g <resource-group> -f infra/main.bicep -p environmentName=<name>
+cd src/LlmInteractionLogger && func azure functionapp publish <function-app>
+```
+
+### What gets created
 
 `infra/main.bicep` creates:
 
