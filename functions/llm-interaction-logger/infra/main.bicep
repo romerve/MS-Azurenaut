@@ -17,32 +17,18 @@ param maximumInstanceCount int = 100
 @allowed([512, 2048, 4096])
 param instanceMemoryMB int = 2048
 
-@description('Days before attachments move to the Cool tier. 0 disables tiering.')
-@minValue(0)
-param attachmentsCoolAfterDays int = 30
-
-@description('Days before attachments and archived interactions are deleted. 0 keeps them indefinitely.')
-@minValue(0)
-param attachmentsDeleteAfterDays int = 365
-
 @description('Log Analytics / Application Insights retention in days.')
 @minValue(30)
 @maxValue(730)
 param logRetentionInDays int = 90
 
-@description('Archive the sanitized interaction JSON to blob storage in addition to Application Insights.')
-param archiveInteractionJson bool = false
-
 var tags = { 'azd-env-name': environmentName, workload: 'llm-interaction-logger' }
 var token = toLower(uniqueString(subscription().id, resourceGroup().id, environmentName))
 var functionAppName = 'func-llmlog-${token}'
 var deploymentContainerName = 'app-package-${take(token, 7)}'
-var attachmentsContainerName = 'llm-attachments'
-var interactionsContainerName = 'llm-interactions'
 
 // Built-in role definition IDs.
 var storageBlobDataOwner = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
-var storageBlobDataContributor = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 var monitoringMetricsPublisher = '3913510d-42f4-4e42-8a64-420c390055eb'
 
 resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
@@ -99,70 +85,6 @@ resource deploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/con
   name: deploymentContainerName
 }
 
-// Captured binary attachments (images, audio, video, documents) live in a separate data account.
-resource dataStorage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
-  name: 'stllmdata${take(token, 14)}'
-  location: location
-  tags: tags
-  kind: 'StorageV2'
-  sku: { name: 'Standard_ZRS' }
-  properties: {
-    minimumTlsVersion: 'TLS1_2'
-    allowBlobPublicAccess: false
-    allowSharedKeyAccess: false
-    supportsHttpsTrafficOnly: true
-    accessTier: 'Hot'
-  }
-}
-
-resource dataBlobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
-  parent: dataStorage
-  name: 'default'
-  properties: {
-    deleteRetentionPolicy: { enabled: true, days: 7 }
-  }
-}
-
-resource attachmentsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
-  parent: dataBlobService
-  name: attachmentsContainerName
-  properties: { publicAccess: 'None' }
-}
-
-resource interactionsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
-  parent: dataBlobService
-  name: interactionsContainerName
-  properties: { publicAccess: 'None' }
-}
-
-resource lifecycle 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05-01' = if (attachmentsCoolAfterDays > 0 || attachmentsDeleteAfterDays > 0) {
-  parent: dataStorage
-  name: 'default'
-  properties: {
-    policy: {
-      rules: [
-        {
-          name: 'llm-capture-retention'
-          enabled: true
-          type: 'Lifecycle'
-          definition: {
-            filters: {
-              blobTypes: ['blockBlob']
-              prefixMatch: ['${attachmentsContainerName}/', '${interactionsContainerName}/']
-            }
-            actions: {
-              baseBlob: union(
-                attachmentsCoolAfterDays > 0 ? { tierToCool: { daysAfterModificationGreaterThan: attachmentsCoolAfterDays } } : {},
-                attachmentsDeleteAfterDays > 0 ? { delete: { daysAfterModificationGreaterThan: attachmentsDeleteAfterDays } } : {}
-              )
-            }
-          }
-        }
-      ]
-    }
-  }
-}
-
 resource hostStorageRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(hostStorage.id, identity.id, storageBlobDataOwner)
   scope: hostStorage
@@ -170,16 +92,6 @@ resource hostStorageRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = 
     principalId: identity.properties.principalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataOwner)
-  }
-}
-
-resource dataStorageRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(dataStorage.id, identity.id, storageBlobDataContributor)
-  scope: dataStorage
-  properties: {
-    principalId: identity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataContributor)
   }
 }
 
@@ -240,25 +152,17 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'AzureWebJobsStorage__clientId', value: identity.properties.clientId }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
         { name: 'APPLICATIONINSIGHTS_AUTHENTICATION_STRING', value: 'ClientId=${identity.properties.clientId};Authorization=AAD' }
-        { name: 'LlmLogging__BlobServiceUri', value: dataStorage.properties.primaryEndpoints.blob }
-        { name: 'LlmLogging__ManagedIdentityClientId', value: identity.properties.clientId }
-        { name: 'LlmLogging__AttachmentsContainer', value: attachmentsContainerName }
-        { name: 'LlmLogging__InteractionsContainer', value: interactionsContainerName }
-        { name: 'LlmLogging__ArchiveInteractionJson', value: string(archiveInteractionJson) }
+        { name: 'AZURE_CLIENT_ID', value: identity.properties.clientId }
       ]
     }
   }
   dependsOn: [
     deploymentContainer
-    attachmentsContainer
-    interactionsContainer
     hostStorageRole
-    dataStorageRole
     appInsightsRole
   ]
 }
 
 output AZURE_FUNCTION_APP_NAME string = functionApp.name
-output FUNCTION_ENDPOINT string = 'https://${functionApp.properties.defaultHostName}/api/llm/interactions'
+output FUNCTION_ENDPOINT string = 'https://${functionApp.properties.defaultHostName}/api/llm-log'
 output APPLICATIONINSIGHTS_NAME string = appInsights.name
-output ATTACHMENTS_STORAGE_ACCOUNT string = dataStorage.name

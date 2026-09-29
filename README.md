@@ -10,9 +10,8 @@
 
 ## Functions
 
-- [LLM interaction logger](functions/llm-interaction-logger/README.md) - Azure Function that captures
-  full LLM prompts and responses to Application Insights and stores image, audio, video, and file
-  attachments in Blob Storage.
+- [LLM interaction logger](functions/llm-interaction-logger/README.md) - POC Azure Function that
+  API Management policies call to log full LLM prompts and responses to Application Insights.
 
 > This repo has been populated by an initial template to help get you started. Please
 > make sure to update the content to build a great experience for community-building.

@@ -1,71 +1,34 @@
 <!--
-  Sample API Management policy that logs every LLM call through the LLM interaction logger function.
+  POC: log every LLM prompt and response through the LLM interaction logger function.
 
-  Inbound  : sends the raw request body to POST {logger}/api/llm/interactions/request
-  Outbound : sends the raw response body to POST {logger}/api/llm/interactions/response
-  on-error : records gateway/backend failures (timeouts, unreachable backend) as the response phase
+  inbound  -> POST {llm-logger-url}/api/llm-log/request   (the prompt, as sent by the client)
+  outbound -> POST {llm-logger-url}/api/llm-log/response  (the LLM response, as returned by the backend)
 
-  Both captures carry x-llm-interaction-id = context.RequestId so they can be joined in Application Insights.
-  send-one-way-request is fire-and-forget: logging never blocks, delays or fails the LLM call.
+  Both calls share x-interaction-id = context.RequestId. send-one-way-request is fire-and-forget, so logging
+  never delays or fails the LLM call. preserveContent: true leaves the original bodies untouched.
 
-  Named values to create (see README):
-    llm-logger-base-url      e.g. https://func-llmlog-xxxx.azurewebsites.net
-    llm-logger-function-key  function key for the function app (mark as secret or reference Key Vault)
-
-  Bodies are sent as text for JSON / text content (including text/event-stream) and base64-encoded otherwise
-  (multipart audio uploads, images, text-to-speech audio), so binary data survives the policy unchanged.
+  Named values: llm-logger-url (function app URL) and llm-logger-key (function key, marked secret).
 -->
 <policies>
     <inbound>
         <base />
-        <set-variable name="llmInteractionId" value="@(context.RequestId.ToString())" />
-        <set-variable name="llmRequestContentType" value="@(context.Request.Headers.GetValueOrDefault("Content-Type", "application/json"))" />
-        <set-variable name="llmRequestIsText" value="@{
-            var type = ((string)context.Variables["llmRequestContentType"]).ToLowerInvariant();
-            return type.Contains("json") || type.StartsWith("text/");
-        }" />
-        <send-one-way-request mode="new" timeout="20">
-            <set-url>{{llm-logger-base-url}}/api/llm/interactions/request</set-url>
+        <send-one-way-request mode="new">
+            <set-url>{{llm-logger-url}}/api/llm-log/request</set-url>
             <set-method>POST</set-method>
             <set-header name="x-functions-key" exists-action="override">
-                <value>{{llm-logger-function-key}}</value>
+                <value>{{llm-logger-key}}</value>
             </set-header>
             <set-header name="Content-Type" exists-action="override">
-                <value>@((string)context.Variables["llmRequestContentType"])</value>
+                <value>application/json</value>
             </set-header>
-            <set-header name="x-llm-body-encoding" exists-action="override">
-                <value>@((bool)context.Variables["llmRequestIsText"] ? "" : "base64")</value>
+            <set-header name="x-interaction-id" exists-action="override">
+                <value>@(context.RequestId.ToString())</value>
             </set-header>
-            <set-header name="x-llm-interaction-id" exists-action="override">
-                <value>@((string)context.Variables["llmInteractionId"])</value>
+            <!-- Azure OpenAI puts the deployment name in the URL rather than the body. -->
+            <set-header name="x-model" exists-action="override">
+                <value>@(context.Request.MatchedParameters.GetValueOrDefault("deployment-id", ""))</value>
             </set-header>
-            <set-header name="x-llm-provider" exists-action="override">
-                <value>azure-openai</value>
-            </set-header>
-            <!-- Azure OpenAI puts the deployment in the URL, not in the request body. -->
-            <set-header name="x-llm-model" exists-action="override">
-                <value>@(context.Request.MatchedParameters.ContainsKey("deployment-id") ? context.Request.MatchedParameters["deployment-id"] : "")</value>
-            </set-header>
-            <set-header name="x-llm-operation" exists-action="override">
-                <value>@(context.Operation?.Name ?? "")</value>
-            </set-header>
-            <set-header name="x-llm-application" exists-action="override">
-                <value>@(context.Api?.Name ?? "")</value>
-            </set-header>
-            <set-header name="x-llm-user-id" exists-action="override">
-                <value>@(context.Subscription?.Id ?? "")</value>
-            </set-header>
-            <set-header name="x-llm-metadata-apim-product" exists-action="override">
-                <value>@(context.Product?.Name ?? "")</value>
-            </set-header>
-            <set-header name="x-llm-metadata-apim-region" exists-action="override">
-                <value>@(context.Deployment.Region)</value>
-            </set-header>
-            <set-body>@{
-                return (bool)context.Variables["llmRequestIsText"]
-                    ? context.Request.Body.As<string>(preserveContent: true)
-                    : Convert.ToBase64String(context.Request.Body.As<byte[]>(preserveContent: true));
-            }</set-body>
+            <set-body>@(context.Request.Body.As<string>(preserveContent: true))</set-body>
         </send-one-way-request>
     </inbound>
     <backend>
@@ -73,88 +36,31 @@
     </backend>
     <outbound>
         <base />
-        <!--
-          Reading the response body buffers it. For streamed (text/event-stream) responses the client receives the
-          stream only after the backend finishes. To keep true streaming for those calls, wrap this block in
-          <choose><when condition="@(!context.Response.Headers.GetValueOrDefault("Content-Type", "").Contains("text/event-stream"))">
-          and rely on APIM's built-in LLM logging (ApiManagementGatewayLlmLog) for streamed calls instead.
-        -->
-        <set-variable name="llmResponseContentType" value="@(context.Response.Headers.GetValueOrDefault("Content-Type", "application/octet-stream"))" />
-        <set-variable name="llmResponseIsText" value="@{
-            var type = ((string)context.Variables["llmResponseContentType"]).ToLowerInvariant();
-            return type.Contains("json") || type.StartsWith("text/");
-        }" />
-        <send-one-way-request mode="new" timeout="20">
-            <set-url>{{llm-logger-base-url}}/api/llm/interactions/response</set-url>
+        <send-one-way-request mode="new">
+            <set-url>{{llm-logger-url}}/api/llm-log/response</set-url>
             <set-method>POST</set-method>
             <set-header name="x-functions-key" exists-action="override">
-                <value>{{llm-logger-function-key}}</value>
-            </set-header>
-            <set-header name="Content-Type" exists-action="override">
-                <value>@((string)context.Variables["llmResponseContentType"])</value>
-            </set-header>
-            <set-header name="x-llm-body-encoding" exists-action="override">
-                <value>@((bool)context.Variables["llmResponseIsText"] ? "" : "base64")</value>
-            </set-header>
-            <set-header name="x-llm-interaction-id" exists-action="override">
-                <value>@((string)context.Variables["llmInteractionId"])</value>
-            </set-header>
-            <set-header name="x-llm-provider" exists-action="override">
-                <value>azure-openai</value>
-            </set-header>
-            <set-header name="x-llm-model" exists-action="override">
-                <value>@(context.Request.MatchedParameters.ContainsKey("deployment-id") ? context.Request.MatchedParameters["deployment-id"] : "")</value>
-            </set-header>
-            <set-header name="x-llm-operation" exists-action="override">
-                <value>@(context.Operation?.Name ?? "")</value>
-            </set-header>
-            <set-header name="x-llm-application" exists-action="override">
-                <value>@(context.Api?.Name ?? "")</value>
-            </set-header>
-            <set-header name="x-llm-user-id" exists-action="override">
-                <value>@(context.Subscription?.Id ?? "")</value>
-            </set-header>
-            <set-header name="x-llm-status-code" exists-action="override">
-                <value>@(context.Response.StatusCode.ToString())</value>
-            </set-header>
-            <!-- Time since APIM received the request: includes the backend LLM call. -->
-            <set-header name="x-llm-latency-ms" exists-action="override">
-                <value>@(((long)context.Elapsed.TotalMilliseconds).ToString())</value>
-            </set-header>
-            <set-body>@{
-                return (bool)context.Variables["llmResponseIsText"]
-                    ? context.Response.Body.As<string>(preserveContent: true)
-                    : Convert.ToBase64String(context.Response.Body.As<byte[]>(preserveContent: true));
-            }</set-body>
-        </send-one-way-request>
-    </outbound>
-    <on-error>
-        <base />
-        <send-one-way-request mode="new" timeout="20">
-            <set-url>{{llm-logger-base-url}}/api/llm/interactions/response</set-url>
-            <set-method>POST</set-method>
-            <set-header name="x-functions-key" exists-action="override">
-                <value>{{llm-logger-function-key}}</value>
+                <value>{{llm-logger-key}}</value>
             </set-header>
             <set-header name="Content-Type" exists-action="override">
                 <value>application/json</value>
             </set-header>
-            <set-header name="x-llm-interaction-id" exists-action="override">
+            <set-header name="x-interaction-id" exists-action="override">
                 <value>@(context.RequestId.ToString())</value>
             </set-header>
-            <set-header name="x-llm-status-code" exists-action="override">
-                <value>@(context.Response?.StatusCode >= 400 ? context.Response.StatusCode.ToString() : "500")</value>
+            <set-header name="x-model" exists-action="override">
+                <value>@(context.Request.MatchedParameters.GetValueOrDefault("deployment-id", ""))</value>
             </set-header>
-            <set-header name="x-llm-latency-ms" exists-action="override">
+            <set-header name="x-status-code" exists-action="override">
+                <value>@(context.Response.StatusCode.ToString())</value>
+            </set-header>
+            <set-header name="x-latency-ms" exists-action="override">
                 <value>@(((long)context.Elapsed.TotalMilliseconds).ToString())</value>
             </set-header>
-            <set-body>@(new JObject(
-                new JProperty("error", new JObject(
-                    new JProperty("source", context.LastError?.Source ?? ""),
-                    new JProperty("reason", context.LastError?.Reason ?? ""),
-                    new JProperty("message", context.LastError?.Message ?? ""),
-                    new JProperty("section", context.LastError?.Section ?? ""))))
-                .ToString())</set-body>
+            <set-body>@(context.Response.Body.As<string>(preserveContent: true))</set-body>
         </send-one-way-request>
+    </outbound>
+    <on-error>
+        <base />
     </on-error>
 </policies>

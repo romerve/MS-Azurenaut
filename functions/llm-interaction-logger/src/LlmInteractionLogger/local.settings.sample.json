@@ -3,8 +3,6 @@
   "Values": {
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
-    "LlmLogging__BlobConnectionString": "UseDevelopmentStorage=true",
-    "LlmLogging__ArchiveInteractionJson": "false",
     "APPLICATIONINSIGHTS_CONNECTION_STRING": ""
   }
 }
