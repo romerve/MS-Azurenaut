@@ -36,9 +36,24 @@ sequenceDiagram
 | `x-status-code` | Backend HTTP status (response only). |
 | `x-latency-ms` | Time from APIM receiving the request to the response (response only). |
 
-Each call becomes one or more Application Insights `traces` records. Their `customDimensions` include `Phase`,
-`InteractionId`, `Model`, `StatusCode`, `LatencyMs`, `Part`, `Parts` and `Body`. Bodies longer than
-8,000 characters are split into ordered parts, because Application Insights truncates property values at 8 KB.
+Each call becomes one or more Application Insights `traces` records:
+
+- **`message`** holds the body text. Bodies longer than 32,000 characters are split into ordered parts.
+  Application Insights keeps up to 32,768 characters in a trace message, but only 8,192 in a custom property.
+- **`customDimensions`** holds `Phase`, `InteractionId`, `Model`, `StatusCode`, `LatencyMs`, `Part`, `Parts`
+  and `BodyLength` (the total length of the body in characters).
+
+## Large prompts
+
+There's no size limit in the function itself. Very large prompts are split, not truncated. A 1 MB prompt
+(roughly 256K tokens) becomes about 33 records, and a 4 MB prompt about 126. Parts never split a character.
+The limits come from the services around it:
+
+| Hop | Limit | Notes |
+| --- | --- | --- |
+| APIM reading the body in a policy | **v2 tiers and Consumption: 2 MiB.** Classic tiers (Developer, Basic, Standard, Premium): 500 MiB. | On v2 tiers, prompts or responses over 2 MiB can't be read by the policy. Use a classic tier if you need larger bodies. |
+| Function request size | 100 MB (Functions host). The isolated worker's web server allows 30 MB by default. | This is far above typical LLM request sizes. |
+| Application Insights | 32,768 characters per `message` | Handled by splitting. Each part is one ingested record, so plan your daily cap and cost around prompt size multiplied by call volume. |
 
 ## APIM policy
 
@@ -61,7 +76,7 @@ traces
 | where customDimensions.InteractionId == "<APIM request id>"
 | extend phase = tostring(customDimensions.Phase), part = toint(customDimensions.Part)
 | order by phase asc, part asc
-| summarize body = strcat_array(make_list(tostring(customDimensions.Body)), "") by phase
+| summarize body = strcat_array(make_list(message), "") by phase
 ```
 
 List recent interactions:
@@ -71,7 +86,7 @@ traces
 | where customDimensions.Phase == "response" and toint(customDimensions.Part) == 1
 | project timestamp, InteractionId = tostring(customDimensions.InteractionId),
           Model = tostring(customDimensions.Model), StatusCode = tostring(customDimensions.StatusCode),
-          LatencyMs = todouble(customDimensions.LatencyMs)
+          LatencyMs = todouble(customDimensions.LatencyMs), BodyLength = tolong(customDimensions.BodyLength)
 | order by timestamp desc
 ```
 
@@ -117,7 +132,7 @@ az functionapp keys list -g <resource-group> -n <function-app> --query functionK
 
 - **Streaming:** reading the response in the outbound policy holds back the whole stream, so the client gets
   all tokens at once when the model finishes.
-- **Size:** APIM v2 and Consumption tiers can read at most 2 MiB of a body in a policy.
+- **Size:** APIM v2 and Consumption tiers can read at most 2 MiB of a body in a policy (see [Large prompts](#large-prompts)).
 - **Binary:** bodies are read as text, so binary content (audio, images) isn't preserved.
 - **Best-effort delivery:** failed log calls aren't retried.
 - **Sensitive data:** prompts and responses are stored in full. Restrict access to Application Insights and
