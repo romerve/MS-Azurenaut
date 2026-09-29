@@ -20,6 +20,12 @@ public interface IInteractionIngestionService
 
     /// <summary>Captures an interaction posted as <c>multipart/form-data</c>: an <c>interaction</c> JSON field plus file parts.</summary>
     Task<CaptureResult> IngestMultipartAsync(Stream body, string boundary, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Captures one half of an interaction (the request or the response) whose body is the raw provider payload,
+    /// e.g. forwarded unchanged by an API Management inbound/outbound policy. Interaction details come from headers.
+    /// </summary>
+    Task<CaptureResult> IngestRawAsync(Stream body, RawCapture raw, CancellationToken cancellationToken);
 }
 
 public sealed class InteractionIngestionService(
@@ -102,6 +108,237 @@ public sealed class InteractionIngestionService(
         }
     }
 
+    public async Task<CaptureResult> IngestRawAsync(Stream body, RawCapture raw, CancellationToken cancellationToken)
+    {
+        var capture = NewCapture();
+        try
+        {
+            if (string.Equals(raw.BodyEncoding, "base64", StringComparison.OrdinalIgnoreCase))
+            {
+                body = await DecodeBase64Async(body, cancellationToken).ConfigureAwait(false);
+            }
+            else if (!string.IsNullOrEmpty(raw.BodyEncoding))
+            {
+                throw new InvalidPayloadException($"Unsupported body encoding '{raw.BodyEncoding}'. Only 'base64' is supported.");
+            }
+
+            var payload = await ReadRawPayloadAsync(capture, body, raw, cancellationToken).ConfigureAwait(false);
+            var root = RawEnvelope(raw, payload);
+            return await CompleteAsync(capture, root, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException && !cancellationToken.IsCancellationRequested)
+        {
+            await CleanupAsync(capture).ConfigureAwait(false);
+            throw new InvalidPayloadException($"The body is malformed or truncated: {ex.Message}");
+        }
+        catch
+        {
+            await CleanupAsync(capture).ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    private async Task<JsonNode> ReadRawPayloadAsync(Capture capture, Stream body, RawCapture raw, CancellationToken cancellationToken)
+    {
+        MediaTypeHeaderValue.TryParse(raw.ContentType, out var media);
+        var mediaType = media?.MediaType.Value?.ToLowerInvariant() ?? string.Empty;
+
+        if (mediaType == "multipart/form-data")
+        {
+            var boundary = HeaderUtilities.RemoveQuotes(media!.Boundary).Value;
+            if (string.IsNullOrWhiteSpace(boundary))
+            {
+                throw new InvalidPayloadException("The multipart body has no boundary.");
+            }
+
+            return await ReadProviderMultipartAsync(capture, body, boundary, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (mediaType == "application/json" || mediaType.EndsWith("+json", StringComparison.Ordinal))
+        {
+            return await ReadJsonAsync(body, cancellationToken).ConfigureAwait(false);
+        }
+
+        using var buffer = await ReadBufferAsync(body, _options.MaxAttachmentBytes, "body", cancellationToken).ConfigureAwait(false);
+        if (buffer.Length == 0)
+        {
+            return JsonValue.Create(string.Empty);
+        }
+
+        if (mediaType == "text/event-stream")
+        {
+            return ServerSentEventsParser.Parse(Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length));
+        }
+
+        if (media is null && TryParseJson(buffer, out var sniffed))
+        {
+            return sniffed;
+        }
+
+        if (mediaType.StartsWith("text/", StringComparison.Ordinal)
+            || mediaType is "application/x-www-form-urlencoded" or "application/xml" or "application/x-ndjson")
+        {
+            if (buffer.Length > _options.MaxJsonBytes)
+            {
+                throw new PayloadTooLargeException($"The text body exceeds the {_options.MaxJsonBytes} byte limit.");
+            }
+
+            return JsonValue.Create(Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length));
+        }
+
+        // Binary body (e.g. text-to-speech audio or an image upload): archive it whole.
+        var contentType = mediaType.Length > 0 ? ContentTypes.Normalize(mediaType) : ContentTypes.OctetStream;
+        if (contentType == ContentTypes.OctetStream)
+        {
+            contentType = ContentTypes.Sniff(buffer.GetBuffer().AsSpan(0, (int)buffer.Length)) ?? contentType;
+        }
+
+        var attachmentId = capture.NextAttachmentId();
+        await StoreAsync(capture, attachmentId, AttachmentSource.RawBody, $"$.{raw.Phase}", null, contentType, buffer, cancellationToken)
+            .ConfigureAwait(false);
+        return new JsonObject
+        {
+            ["body"] = AttachmentReference.For(attachmentId),
+            ["contentType"] = contentType,
+            ["sizeBytes"] = buffer.Length,
+        };
+    }
+
+    private async Task<JsonObject> ReadProviderMultipartAsync(Capture capture, Stream body, string boundary, CancellationToken cancellationToken)
+    {
+        var fields = new JsonObject();
+        var reader = new MultipartReader(boundary, body);
+        MultipartSection? section;
+        while ((section = await reader.ReadNextSectionAsync(cancellationToken).ConfigureAwait(false)) is not null)
+        {
+            var disposition = section.GetContentDispositionHeader()
+                ?? throw new InvalidPayloadException("Every multipart section must have a Content-Disposition header.");
+            var name = HeaderUtilities.RemoveQuotes(disposition.Name).Value ?? "field";
+
+            JsonNode value;
+            if (disposition.IsFileDisposition())
+            {
+                var before = capture.Attachments.Count;
+                await StoreMultipartFileAsync(capture, section, disposition, cancellationToken).ConfigureAwait(false);
+                value = AttachmentReference.For(capture.Attachments[before].Id);
+            }
+            else
+            {
+                using var buffer = await ReadBufferAsync(section.Body, _options.MaxJsonBytes, $"form field '{name}'", cancellationToken).ConfigureAwait(false);
+                value = JsonValue.Create(Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length))!;
+            }
+
+            switch (fields[name])
+            {
+                case null:
+                    fields[name] = value;
+                    break;
+                case JsonArray values:
+                    values.Add(value);
+                    break;
+                case var existing:
+                    fields.Remove(name);
+                    fields[name] = new JsonArray(existing, value);
+                    break;
+            }
+        }
+
+        return fields;
+    }
+
+    private static JsonObject RawEnvelope(RawCapture raw, JsonNode payload)
+    {
+        var root = new JsonObject();
+        void Set(string key, string? value)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                root[key] = value;
+            }
+        }
+
+        Set("interactionId", raw.InteractionId);
+        Set("conversationId", raw.ConversationId);
+        Set("userId", raw.UserId);
+        Set("application", raw.Application);
+        Set("provider", raw.Provider);
+        Set("operation", raw.Operation);
+        if (raw.LatencyMs is { } latency)
+        {
+            root["latencyMs"] = latency;
+        }
+
+        var metadata = new JsonObject();
+        foreach (var (key, value) in raw.Metadata)
+        {
+            metadata[key] = value;
+        }
+
+        if (raw.StatusCode is { } statusCode)
+        {
+            metadata["http_status_code"] = statusCode.ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (metadata.Count > 0)
+        {
+            root["metadata"] = metadata;
+        }
+
+        if (raw.Phase == RawCapture.RequestPhase)
+        {
+            root["request"] = payload;
+            // Azure OpenAI carries the deployment in the URL, not the body; the header fills that gap.
+            Set("model", raw.Model ?? ModelOf(payload));
+        }
+        else
+        {
+            var failed = raw.StatusCode >= 400;
+            root[failed ? "error" : "response"] = payload;
+            root["status"] = failed ? "error" : "success";
+            Set("model", ModelOf(payload) ?? raw.Model);
+        }
+
+        return root;
+    }
+
+    private static string? ModelOf(JsonNode payload) =>
+        (payload as JsonObject)?["model"] is JsonValue value && value.TryGetValue(out string? model) ? model : null;
+
+    private async Task<MemoryStream> DecodeBase64Async(Stream body, CancellationToken cancellationToken)
+    {
+        var limit = (Math.Max(_options.MaxAttachmentBytes, _options.MaxJsonBytes) + 2) / 3 * 4 + 4;
+        using var encoded = await ReadBufferAsync(body, limit, "base64 body", cancellationToken).ConfigureAwait(false);
+        var text = Encoding.ASCII.GetString(encoded.GetBuffer(), 0, (int)encoded.Length).Trim();
+        try
+        {
+            return new MemoryStream(Convert.FromBase64String(text), writable: false);
+        }
+        catch (FormatException)
+        {
+            throw new InvalidPayloadException("The body is not valid base64.");
+        }
+    }
+
+    private static bool TryParseJson(MemoryStream buffer, out JsonNode node)
+    {
+        node = null!;
+        var first = buffer.GetBuffer().AsSpan(0, (int)buffer.Length).TrimStart(" \t\r\n"u8);
+        if (first.IsEmpty || first[0] is not ((byte)'{' or (byte)'['))
+        {
+            return false;
+        }
+
+        try
+        {
+            node = JsonNode.Parse(buffer.GetBuffer().AsSpan(0, (int)buffer.Length), documentOptions: DocumentOptions)!;
+            return node is not null;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
     private async Task<CaptureResult> CompleteAsync(Capture capture, JsonNode node, CancellationToken cancellationToken)
     {
         if (node is not JsonObject root)
@@ -109,9 +346,9 @@ public sealed class InteractionIngestionService(
             throw new InvalidPayloadException("The interaction must be a JSON object.");
         }
 
-        if (root["request"] is null && root["response"] is null)
+        if (root["request"] is null && root["response"] is null && root["error"] is null)
         {
-            throw new InvalidPayloadException("The interaction must contain a 'request' and/or 'response' property.");
+            throw new InvalidPayloadException("The interaction must contain a 'request', 'response' and/or 'error' property.");
         }
 
         var extractor = new BinaryContentExtractor(_options.MinInlineBinaryChars, _options.MaxAttachments, _options.MaxAttachmentBytes);
@@ -236,21 +473,29 @@ public sealed class InteractionIngestionService(
         return stored.Uri;
     }
 
-    private async Task<JsonNode> ReadJsonAsync(Stream body, CancellationToken cancellationToken)
+    private static async Task<MemoryStream> ReadBufferAsync(Stream body, long limit, string what, CancellationToken cancellationToken)
     {
-        using var buffer = new MemoryStream();
+        var buffer = new MemoryStream();
         var chunk = new byte[81920];
         int read;
         while ((read = await body.ReadAsync(chunk, cancellationToken).ConfigureAwait(false)) > 0)
         {
-            if (buffer.Length + read > _options.MaxJsonBytes)
+            if (buffer.Length + read > limit)
             {
-                throw new PayloadTooLargeException($"The interaction JSON exceeds the {_options.MaxJsonBytes} byte limit.");
+                buffer.Dispose();
+                throw new PayloadTooLargeException($"The {what} exceeds the {limit} byte limit.");
             }
 
             buffer.Write(chunk, 0, read);
         }
 
+        buffer.Position = 0;
+        return buffer;
+    }
+
+    private async Task<JsonNode> ReadJsonAsync(Stream body, CancellationToken cancellationToken)
+    {
+        using var buffer = await ReadBufferAsync(body, _options.MaxJsonBytes, "interaction JSON", cancellationToken).ConfigureAwait(false);
         if (buffer.Length == 0)
         {
             throw new InvalidPayloadException("The request body is empty.");

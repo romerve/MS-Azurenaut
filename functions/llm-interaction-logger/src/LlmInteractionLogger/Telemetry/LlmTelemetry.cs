@@ -204,7 +204,11 @@ public sealed class LlmTelemetry : ILlmTelemetry
             { "llm.status", summary.Status ?? "unknown" },
         };
 
-        _interactions.Add(1, tags);
+        // A request-only capture is followed by its response capture; count the interaction once.
+        if (summary.Phase != "request")
+        {
+            _interactions.Add(1, tags);
+        }
 
         if (summary.Usage.InputTokens is { } input)
         {
@@ -236,7 +240,11 @@ public sealed class LlmTelemetry : ILlmTelemetry
 
     private static List<KeyValuePair<string, object?>> Correlation(InteractionSummary summary)
     {
-        var attributes = new List<KeyValuePair<string, object?>> { new("llm.capture_id", summary.CaptureId) };
+        var attributes = new List<KeyValuePair<string, object?>>
+        {
+            new("llm.capture_id", summary.CaptureId),
+            new("llm.phase", summary.Phase),
+        };
         AddIfPresent(attributes, "llm.interaction_id", summary.InteractionId);
         return attributes;
     }

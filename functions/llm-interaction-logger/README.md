@@ -11,6 +11,7 @@ prompt, the full response, token usage and latency, and every attachment sent to
 ```mermaid
 flowchart LR
     Client[App / LLM gateway] -- "POST /api/llm/interactions<br/>JSON or multipart" --> Func[CaptureLlmInteraction]
+    APIM[API Management policy] -- "POST /api/llm/interactions/request|response<br/>raw provider body + x-llm-* headers" --> Func
     Func -- "images · audio · video · files" --> Blob[(Blob Storage<br/>llm-attachments)]
     Func -- "customEvents · traces · customMetrics" --> AI[(Application Insights)]
 ```
@@ -35,7 +36,11 @@ flowchart LR
 
 ## API
 
-`POST /api/llm/interactions` (function key required: `x-functions-key` header or `?code=`).
+Two endpoints, both requiring a function key (`x-functions-key` header or `?code=`):
+
+- `POST /api/llm/interactions`: one complete interaction per call (options A and B).
+- `POST /api/llm/interactions/{request|response}`: one half of an interaction per call, as the raw provider
+  body (option C). This is the shape an API Management inbound/outbound policy produces.
 
 ### Option A: `application/json`
 
@@ -76,6 +81,31 @@ curl -X POST "$ENDPOINT?code=$KEY" \
   -F 'files=@clip.mp4;type=video/mp4'
 ```
 
+### Option C: raw provider body, one phase per call (API Management)
+
+`POST /api/llm/interactions/request` with the body the client sent to the LLM, and
+`POST /api/llm/interactions/response` with the body the LLM returned. Nothing needs to be rewritten; the
+interaction is described with headers:
+
+| Header | Meaning |
+| --- | --- |
+| `x-llm-interaction-id` | **Correlates the two phases.** Use the same value for both (APIM: `context.RequestId`). |
+| `x-llm-provider`, `x-llm-model`, `x-llm-operation`, `x-llm-application`, `x-llm-user-id`, `x-llm-conversation-id` | Interaction details. `x-llm-model` fills in the Azure OpenAI deployment (it's in the URL, not the body); a `model` in the body takes precedence for responses. |
+| `x-llm-status-code` | Backend HTTP status (response phase). `>= 400` logs the body as `error` with status `error`. Also stored as `llm.metadata.http_status_code`. |
+| `x-llm-latency-ms` | Latency in milliseconds (APIM: `context.Elapsed`). |
+| `x-llm-body-encoding: base64` | The body is base64 text; it's decoded first. Lets APIM forward binary bodies safely. |
+| `x-llm-metadata-{name}` | Any number of custom dimensions, logged as `llm.metadata.{name}`. |
+
+How the body is handled, by `Content-Type`:
+
+| Body | Captured as |
+| --- | --- |
+| `application/json` / `*+json` | The JSON, with inline base64 and data URIs moved to blob storage as in option A. |
+| `text/event-stream` (streaming) | Parsed into `{ "stream": true, "id", "model", "output_text", "finish_reason", "usage", "events": [...] }`. Every event is kept; text deltas, usage and finish reasons are aggregated for OpenAI/Azure OpenAI chat and Responses API, Anthropic and Gemini streams. |
+| `multipart/form-data` (e.g. audio transcription uploads) | Files are streamed to blob storage; the form fields (plus file references) are logged as the prompt. |
+| Other `text/*`, XML, form-urlencoded | Logged as a string. |
+| Anything else (e.g. `audio/mpeg` from text-to-speech, images) | The whole body is stored as one blob attachment and logged as `{ "body": "llm-attachment://att-001", ... }`. |
+
 ### Response: `201 Created`
 
 ```json
@@ -108,13 +138,16 @@ Errors return `application/problem+json`: `400` (invalid payload), `413` (limit 
 | Data | Destination |
 | --- | --- |
 | Binary attachments | Blob `llm-attachments/{yyyy}/{MM}/{dd}/{captureId}/{attachmentId}[-{fileName}]`. Blob metadata includes `capture_id`, `attachment_id`, `source`, `location` and `sha256`. |
-| One summary per interaction | `customEvents` named `LlmInteraction`: model, provider, status, finish reasons, `gen_ai.usage.*` tokens, latency, character and chunk counts, attachment ids and types, `llm.metadata.*` |
+| One summary per capture | `customEvents` named `LlmInteraction`: `llm.phase` (`complete`, `request` or `response`), model, provider, status, finish reasons, `gen_ai.usage.*` tokens, latency, character and chunk counts, attachment ids and types, `llm.metadata.*` |
 | One record per attachment | `customEvents` named `LlmAttachment`: id, reference, location, content type, size, SHA-256, blob URI |
 | Full prompt / response / error / attachments JSON | `traces` with `llm.content.kind` = `prompt`, `response`, `error` or `attachments`, chunked with `llm.content.chunk_index` and `llm.content.chunk_count` |
 | Metrics | `customMetrics`: `llm.interactions`, `gen_ai.client.token.usage`, `gen_ai.client.operation.duration`, `llm.attachments`, `llm.attachment.bytes` |
 | (Optional) sanitized interaction JSON | Blob `llm-interactions/{yyyy}/{MM}/{dd}/{captureId}/interaction.json` when `LlmLogging__ArchiveInteractionJson=true` |
 
 Every record carries `llm.capture_id`, plus `llm.interaction_id` when one is available, so you can join them.
+With option C a single LLM call produces two captures (phases `request` and `response`) that share
+`llm.interaction_id`. `llm.interactions` and the token/duration metrics are recorded only for `response` and
+`complete` captures, so each call is counted once; a `request` capture has no status until its response arrives.
 
 > **Sampling is disabled on purpose.** Azure Monitor OpenTelemetry Exporter 1.6+ rate-limits traces to
 > 5/s by default and drops logs tied to unsampled traces. That would silently lose prompts, so
@@ -132,17 +165,72 @@ traces
 | summarize prompt = strcat_array(make_list(tostring(customDimensions["llm.content"])), "")
 ```
 
+### KQL: prompt and response for one API Management call
+
+```kusto
+traces
+| where customDimensions["llm.interaction_id"] == "<APIM request id>"
+| extend kind = tostring(customDimensions["llm.content.kind"]), idx = toint(customDimensions["llm.content.chunk_index"])
+| order by kind asc, idx asc
+| summarize content = strcat_array(make_list(tostring(customDimensions["llm.content"])), "") by kind
+```
+
 ### KQL: token usage and latency by model
 
 ```kusto
 customEvents
-| where name == "LlmInteraction"
+| where name == "LlmInteraction" and tostring(customDimensions["llm.phase"]) != "request"
 | extend model = tostring(customDimensions["gen_ai.request.model"]),
          inTok = tolong(customDimensions["gen_ai.usage.input_tokens"]),
          outTok = tolong(customDimensions["gen_ai.usage.output_tokens"]),
          latency = todouble(customDimensions["llm.latency_ms"])
 | summarize calls = count(), inTok = sum(inTok), outTok = sum(outTok), p95LatencyMs = percentile(latency, 95) by model
 ```
+
+## Using it behind Azure API Management
+
+[`apim/llm-logging-policy.xml`](apim/llm-logging-policy.xml) is a ready-to-adapt policy for an Azure OpenAI
+API in APIM:
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant A as API Management
+    participant F as Logger function
+    participant L as LLM backend
+    C->>A: POST chat/completions
+    A-)F: inbound: send-one-way-request → /api/llm/interactions/request
+    A->>L: forward request (unchanged)
+    L-->>A: response
+    A-)F: outbound: send-one-way-request → /api/llm/interactions/response
+    A-->>C: response (unchanged)
+```
+
+- **No added latency or failure coupling.** `send-one-way-request` is fire-and-forget, so the LLM call never
+  waits for, or fails because of, the logger. The trade-off is best-effort delivery: if the function is
+  down, that capture is lost (APIM doesn't retry).
+- **Bodies are read with `preserveContent: true`**, so the original request/response still reaches the
+  backend/client untouched.
+- **Binary safety.** JSON and text bodies are forwarded as text. Everything else (multipart audio uploads,
+  TTS audio, images) is sent as `Convert.ToBase64String(Body.As<byte[]>(...))` with
+  `x-llm-body-encoding: base64`, because `Body.As<string>` would corrupt binary data.
+- **Correlation.** Both phases use `context.RequestId` as `x-llm-interaction-id`. `on-error` also posts a
+  `response` capture, so backend timeouts and gateway failures are recorded against the same id.
+- **Setup.** Create named values `llm-logger-base-url` (the function app URL) and `llm-logger-function-key`
+  (a function key; mark it secret or reference Key Vault). Apply the policy at API or operation scope. When
+  deploying it with Bicep/ARM use `format: 'rawxml'`. Policy expressions may contain unescaped quotes and
+  generics, which is valid for APIM but not strict XML.
+
+Limits and caveats:
+
+| Topic | Impact | Mitigation |
+| --- | --- | --- |
+| **Streaming (`stream: true`)** | Reading the response body in `outbound` buffers the whole SSE stream, so the client gets all tokens at once when the model finishes. | Keep it if full capture matters more than token-by-token UX. Otherwise skip the outbound capture for `text/event-stream` (see the comment in the policy) and use APIM's built-in [LLM logging](https://learn.microsoft.com/azure/api-management/api-management-howto-llm-logs) (`ApiManagementGatewayLlmLog`), which logs streamed prompts/completions without buffering (up to 2 MB each, in 32 KB chunks, no attachment offload). |
+| **APIM buffered payload size** | v2 and Consumption tiers can buffer at most **2 MiB** of body in a policy (classic tiers: 500 MiB). Larger bodies (big images/video) can't be read by the policy. | Use a classic tier for large multimodal payloads, or have the app post attachments directly to the function (option B). |
+| **Base64 overhead** | Binary bodies grow ~33% on the APIM → function hop and must fit `MaxAttachmentBytes`. | Raise `LlmLogging__MaxAttachmentBytes` if needed. |
+| **Consumption tier** | 30-second total request duration and no long-running SSE connections. | Use a classic or v2 tier for LLM traffic. |
+| **Order** | The `response` capture can arrive before the `request` capture. | Join on `llm.interaction_id`, never on time. |
+| **Auth** | The function key lives in an APIM named value. | Prefer Key Vault-backed named values, restrict the function app's inbound access to APIM, or put Entra (Easy Auth) in front of the function and use `authentication-managed-identity` in the policy. |
 
 ## Configuration
 

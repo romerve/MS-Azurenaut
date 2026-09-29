@@ -38,7 +38,8 @@ public static class InteractionSummaryBuilder
             Provider = Id(Text(root, "provider", "system")),
             Model = Id(Text(root, "model") ?? Text(request, "model") ?? Text(response, "model", "modelVersion")),
             Operation = Id(Text(root, "operation", "operationName", "operation_name")),
-            Status = Id(Text(root, "status") ?? (root["error"] is null ? "success" : "error")),
+            Phase = Phase(root),
+            Status = Id(Text(root, "status") ?? (root["error"] is not null ? "error" : root["response"] is not null ? "success" : null)),
             FinishReason = Id(Text(root, "finishReason", "finish_reason") ?? FinishReason(response)),
             LatencyMs = latency,
             StartedAt = startedAt,
@@ -46,6 +47,13 @@ public static class InteractionSummaryBuilder
             Usage = Usage(root["usage"] as JsonObject ?? response?["usage"] as JsonObject ?? response?["usageMetadata"] as JsonObject),
             Metadata = Metadata(root["metadata"] as JsonObject),
         };
+    }
+
+    public static string Phase(JsonObject root)
+    {
+        var hasRequest = root["request"] is not null;
+        var hasOutcome = root["response"] is not null || root["error"] is not null;
+        return hasRequest && hasOutcome ? "complete" : hasRequest ? "request" : "response";
     }
 
     public static TokenUsage Usage(JsonObject? usage)
@@ -84,7 +92,7 @@ public static class InteractionSummaryBuilder
             return string.Join(',', reasons.Distinct());
         }
 
-        return Text(response, "stop_reason", "stopReason", "status");
+        return Text(response, "finish_reason", "stop_reason", "stopReason", "status");
     }
 
     private static IReadOnlyDictionary<string, string> Metadata(JsonObject? metadata)

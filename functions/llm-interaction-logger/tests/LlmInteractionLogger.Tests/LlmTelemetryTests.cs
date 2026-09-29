@@ -43,6 +43,7 @@ public class LlmTelemetryTests
         {
             CaptureId = "cap-1",
             InteractionId = "int-1",
+            Phase = "complete",
             Provider = "azure-openai",
             Model = "gpt-4o",
             Status = "success",

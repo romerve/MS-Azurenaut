@@ -6,6 +6,7 @@ public enum AttachmentSource
 {
     InlineJson,
     Multipart,
+    RawBody,
 }
 
 /// <summary>A binary payload that was offloaded to blob storage.</summary>
@@ -59,12 +60,38 @@ public sealed record InteractionSummary
     public string? Provider { get; init; }
     public string? Model { get; init; }
     public string? Operation { get; init; }
+    /// <summary>"request", "response" or "complete" (both halves in one capture).</summary>
+    public required string Phase { get; init; }
     public string? Status { get; init; }
     public string? FinishReason { get; init; }
     public double? LatencyMs { get; init; }
     public DateTimeOffset? StartedAt { get; init; }
     public DateTimeOffset? CompletedAt { get; init; }
     public required TokenUsage Usage { get; init; }
+    public IReadOnlyDictionary<string, string> Metadata { get; init; } = new Dictionary<string, string>();
+}
+
+/// <summary>
+/// Context for a single-phase capture where the body is the raw provider payload and the interaction
+/// details come from <c>x-llm-*</c> headers (the shape API Management policies can easily produce).
+/// </summary>
+public sealed record RawCapture
+{
+    public const string RequestPhase = "request";
+    public const string ResponsePhase = "response";
+
+    public required string Phase { get; init; }
+    public string? ContentType { get; init; }
+    public string? BodyEncoding { get; init; }
+    public string? InteractionId { get; init; }
+    public string? ConversationId { get; init; }
+    public string? UserId { get; init; }
+    public string? Application { get; init; }
+    public string? Provider { get; init; }
+    public string? Model { get; init; }
+    public string? Operation { get; init; }
+    public double? LatencyMs { get; init; }
+    public int? StatusCode { get; init; }
     public IReadOnlyDictionary<string, string> Metadata { get; init; } = new Dictionary<string, string>();
 }
 
