@@ -8,6 +8,12 @@
   a contract-compatible microservices decomposition, containers, and optional
   optional Azure Container Apps reference infrastructure.
 
+## Functions
+
+- [LLM interaction logger](functions/llm-interaction-logger/README.md) - Azure Function that captures
+  full LLM prompts and responses to Application Insights and stores image, audio, video, and file
+  attachments in Blob Storage.
+
 > This repo has been populated by an initial template to help get you started. Please
 > make sure to update the content to build a great experience for community-building.
 
