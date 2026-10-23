@@ -1,0 +1,17 @@
+{
+  "version": "2.0",
+  "extensionBundle": {
+    "id": "Microsoft.Azure.Functions.ExtensionBundle.Preview",
+    "version": "[4.0.0, 5.0.0)"
+  },
+  "extensions": {
+    "mcp": {
+      "serverName": "Fictional Inventory",
+      "serverVersion": "1.0.0",
+      "instructions": "Query 100 fictional products. All tools are read-only. Prices and inventory values are in USD. Search is paginated; use next_offset to continue.",
+      "system": {
+        "webhookAuthorizationLevel": "System"
+      }
+    }
+  }
+}
